@@ -1,0 +1,6 @@
+{
+  "name": "CSC Daily Time Card Generator",
+  "description": "Civil Service Commission Form 48 (Daily Time Record) generator with Excel electronic time log import, three signatories (Employee, Timekeeper, Chief Supervisor), and print-ready non-editable PDF output.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
