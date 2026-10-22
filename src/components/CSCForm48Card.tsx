@@ -59,13 +59,17 @@ export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
         </div>
       </div>
 
-      {/* Month & Official Hours Schedule - Centered & Highly Visible OCTOBER 2026 */}
-      <div className="text-[10px] border-t border-black pt-2 mb-2 text-center">
-        <div className="text-[10.5px] italic text-black/85 mb-0.5">
-          For the month of
-        </div>
-        <div className="font-bold text-sm tracking-widest uppercase border-b-2 border-black inline-block px-10 pb-0.5 mb-2.5">
-          {monthName} {year}
+      {/* Month & Official Hours Schedule - "For the month of:" on the side */}
+      <div className="text-[10px] border-t border-black pt-2 mb-2">
+        <div className="flex items-baseline mb-2 text-left">
+          <span className="text-[10.5px] italic text-black shrink-0 mr-2 font-medium">
+            For the month of:
+          </span>
+          <div className="flex-1 border-b-2 border-black text-center pb-0.5">
+            <span className="font-bold text-sm tracking-widest uppercase">
+              {monthName} {year}
+            </span>
+          </div>
         </div>
 
         <div className="text-[9px] leading-tight space-y-0.5 text-left border-t border-black/40 pt-1.5">

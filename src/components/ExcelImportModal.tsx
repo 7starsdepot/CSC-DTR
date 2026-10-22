@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileSpreadsheet, Check, AlertCircle, Download, X, ArrowRight, Users, User } from 'lucide-react';
-import { parseExcelFile, generateSampleExcelFile, convertParsedResultToPersonnelList, ParsedTimeCardResult } from '../utils/excelParser';
+import { Upload, FileSpreadsheet, Check, AlertCircle, X, ArrowRight, Users, User } from 'lucide-react';
+import { parseExcelFile, convertParsedResultToPersonnelList, ParsedTimeCardResult } from '../utils/excelParser';
 import { OfficialSchedule, PersonnelData } from '../types/csc';
 
 interface ExcelImportModalProps {
@@ -64,18 +64,6 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     }
   };
 
-  const handleDownloadSample = () => {
-    const { blob, fileName } = generateSampleExcelFile(month, year);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
   const handleApplyAll = () => {
     if (!parseResult) return;
     const personnelList = convertParsedResultToPersonnelList(parseResult, year, month, schedule);
@@ -109,22 +97,6 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
         {/* Body Content */}
         <div className="p-6 overflow-y-auto space-y-5">
-          {/* Download Sample Banner */}
-          <div className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
-            <div className="space-y-0.5">
-              <div className="font-medium text-slate-800">Download Official Multi-Personnel Template</div>
-              <div className="text-slate-500">
-                Pre-populated sample with 3 employees and columns: In, Break, Resume, Out, Remarks
-              </div>
-            </div>
-            <button
-              onClick={handleDownloadSample}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-100 transition-colors shrink-0"
-            >
-              <Download className="w-3.5 h-3.5 text-slate-600" />
-              Download Template (.xlsx)
-            </button>
-          </div>
 
           {/* Upload Dropzone */}
           <div

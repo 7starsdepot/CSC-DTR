@@ -44,8 +44,18 @@ export function detectColumnMapping(headers: string[]): {
   for (const header of headers) {
     const norm = normalizeColumnName(header);
 
-    // Employee name detection
-    if (!employeeNameCol && (norm.includes('employeename') || norm.includes('fullname') || norm === 'employee' || norm === 'name' || norm === 'staffname' || norm.includes('empname') || norm === 'personnel')) {
+    // Employee name detection (matches Name:, Name, Employee, Employee Name, etc.)
+    if (!employeeNameCol && (
+      norm === 'name' ||
+      norm.startsWith('name') ||
+      norm.includes('name') ||
+      norm.includes('employeename') ||
+      norm.includes('fullname') ||
+      norm === 'employee' ||
+      norm === 'staffname' ||
+      norm.includes('empname') ||
+      norm === 'personnel'
+    )) {
       employeeNameCol = header;
       continue;
     }
@@ -334,7 +344,7 @@ export function convertParsedResultToPersonnelList(
     const merged = mergeParsedLogsIntoRecords(baseRecords, importedLogs, schedule);
     return {
       id: emp.id,
-      name: emp.name === 'DEFAULT_EMPLOYEE' ? 'JUAN D. DELA CRUZ' : emp.name,
+      name: (emp.name === 'DEFAULT_EMPLOYEE' || !emp.name) ? 'EMPLOYEE' : emp.name.toUpperCase(),
       records: merged
     };
   });

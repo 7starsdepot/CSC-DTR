@@ -10,7 +10,6 @@ interface DTRControlPanelProps {
   onChangeMonthYear: (month: number, year: number) => void;
   onSelectPersonnelIndex: (index: number) => void;
   onOpenImport: () => void;
-  onDownloadTemplate: () => void;
   onPreviewPrint: () => void;
 }
 
@@ -21,7 +20,6 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
   onChangeMonthYear,
   onSelectPersonnelIndex,
   onOpenImport,
-  onDownloadTemplate,
   onPreviewPrint
 }) => {
   const { month, year, personnelList, selectedEmployeeIndex, signatories, schedule } = document;
@@ -44,13 +42,6 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={onDownloadTemplate}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Excel Template</span>
-          </button>
 
           <button
             onClick={onOpenImport}

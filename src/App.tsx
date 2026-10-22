@@ -1,13 +1,13 @@
-import React, { useState, useMemo } from 'react';
-import { Printer, FileSpreadsheet, Download, Eye, User, CheckCircle2, ShieldCheck } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Printer, FileSpreadsheet, Eye, User, ShieldCheck } from 'lucide-react';
 import { DailyRecord, DTRDocument, OfficialSchedule, PersonnelData, Signatories } from './types/csc';
 import { generateMonthRecords, recalculateRecords } from './utils/timeCalculations';
-import { generateSampleExcelFile } from './utils/excelParser';
 import { DTRControlPanel } from './components/DTRControlPanel';
-import { DataImportedViewTable } from './components/DataImportedViewTable';
 import { CSCForm48Card } from './components/CSCForm48Card';
 import { DTRPrintPreview } from './components/DTRPrintPreview';
 import { ExcelImportModal } from './components/ExcelImportModal';
+
+const STORAGE_KEY = 'csc_daily_time_card_persisted_v1';
 
 export default function App() {
   const currentYear = 2026;
@@ -41,7 +41,7 @@ export default function App() {
     }
   };
 
-  // Generate initial sample personnel records
+  // Generate initial sample personnel records (fallback only if no saved data in localStorage)
   const initialPersonnelList: PersonnelData[] = useMemo(() => {
     const staffList = [
       { id: 'CSC-2026-001', name: 'JUAN D. DELA CRUZ' },
@@ -91,22 +91,50 @@ export default function App() {
     });
   }, []);
 
-  const [dtrDoc, setDtrDoc] = useState<DTRDocument>({
-    id: 'dtr-doc-01',
-    month: currentMonth,
-    year: currentYear,
-    personnelList: initialPersonnelList,
-    selectedEmployeeIndex: 0,
-    officeAgency: 'Civil Service Commission · Central Office',
-    signatories: initialSignatories,
-    schedule: initialSchedule
+  // Initialize from localStorage so imported and recorded data is preserved across page reloads
+  const [dtrDoc, setDtrDoc] = useState<DTRDocument>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && Array.isArray(parsed.personnelList) && parsed.personnelList.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read saved time card data from localStorage', e);
+    }
+
+    return {
+      id: 'dtr-doc-01',
+      month: currentMonth,
+      year: currentYear,
+      personnelList: initialPersonnelList,
+      selectedEmployeeIndex: 0,
+      officeAgency: 'Civil Service Commission · Central Office',
+      signatories: initialSignatories,
+      schedule: initialSchedule
+    };
   });
+
+  // Automatically save to localStorage whenever dtrDoc is updated or imported
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(dtrDoc));
+    } catch (e) {
+      console.warn('Could not persist time card data to localStorage', e);
+    }
+  }, [dtrDoc]);
 
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Active selected personnel
-  const currentPersonnel = dtrDoc.personnelList[dtrDoc.selectedEmployeeIndex] || dtrDoc.personnelList[0];
+  const currentPersonnel = dtrDoc.personnelList[dtrDoc.selectedEmployeeIndex] || dtrDoc.personnelList[0] || {
+    id: 'EMP-01',
+    name: 'JUAN D. DELA CRUZ',
+    records: []
+  };
 
   // Active Personnel Summary figures
   const summaryStats = useMemo(() => {
@@ -190,18 +218,6 @@ export default function App() {
     }));
   };
 
-  const handleDownloadSampleTemplate = () => {
-    const { blob, fileName } = generateSampleExcelFile(dtrDoc.month, dtrDoc.year);
-    const url = URL.createObjectURL(blob);
-    const a = window.document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    window.document.body.appendChild(a);
-    a.click();
-    window.document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
   // Full-page Print Preview Mode
   if (isPreviewOpen) {
     return (
@@ -246,13 +262,6 @@ export default function App() {
               className="hover:text-slate-900 transition-colors whitespace-nowrap shrink-0"
             >
               Signatories
-            </button>
-            <button
-              onClick={handleDownloadSampleTemplate}
-              className="hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
-            >
-              <Download className="w-3.5 h-3.5 text-slate-600" />
-              <span>Download Template</span>
             </button>
           </nav>
 
@@ -299,10 +308,10 @@ export default function App() {
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs flex flex-col justify-between">
-            <div className="text-xs text-slate-500 font-medium">Integrity Mode</div>
+            <div className="text-xs text-slate-500 font-medium">Data Status</div>
             <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 mt-1">
               <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Direct Excel Output</span>
+              <span>Saved Locally</span>
             </div>
           </div>
         </div>
@@ -316,58 +325,32 @@ export default function App() {
             onChangeMonthYear={handleChangeMonthYear}
             onSelectPersonnelIndex={handleSelectPersonnelIndex}
             onOpenImport={() => setIsImportModalOpen(true)}
-            onDownloadTemplate={handleDownloadSampleTemplate}
             onPreviewPrint={() => setIsPreviewOpen(true)}
           />
         </div>
 
-        {/* 2-Column Split: Read-Only Imported Data Grid & Official Form 48 Card */}
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-          {/* Left Column: Read-Only Imported Electronic Time Card Records (7 Cols on XL) */}
-          <div className="xl:col-span-7 space-y-4">
-            <DataImportedViewTable
-              records={currentPersonnel.records}
-              schedule={dtrDoc.schedule}
-              employeeName={currentPersonnel.name}
-              onOpenImport={() => setIsImportModalOpen(true)}
-            />
-
-            {/* Explainer Note */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4 text-xs text-slate-600 space-y-1.5">
-              <div className="font-semibold text-slate-800 flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>Strict Excel-to-PDF Integrity Mode</span>
-              </div>
-              <p className="leading-relaxed text-slate-600">
-                In compliance with Philippine civil service audit standards, manual table cell editing is restricted. Whatever punch records (In = AM Arrival, Break = PM Departure, Resume = PM Arrival, Out = PM Departure) and remarks are imported from the spreadsheet will be generated and printed to the official Form 48 PDF.
-              </p>
-            </div>
+        {/* Main Centerpiece: CSC Form 48 Card */}
+        <div className="flex flex-col items-center space-y-4">
+          <div className="flex items-center justify-between w-full max-w-[560px] px-2 text-xs">
+            <span className="font-semibold text-slate-700">Official CSC Form 48 Card Preview</span>
+            <button
+              onClick={() => setIsPreviewOpen(true)}
+              className="text-blue-600 hover:text-blue-800 font-semibold inline-flex items-center gap-1.5 transition-colors"
+            >
+              <Eye className="w-4 h-4" />
+              <span>Full Print / PDF View</span>
+            </button>
           </div>
 
-          {/* Right Column: Live Form 48 Card with 7x Remarks Column (5 Cols on XL) */}
-          <div className="xl:col-span-5 space-y-3">
-            <div className="flex items-center justify-between px-1 text-xs">
-              <span className="font-semibold text-slate-700">CSC Form 48 Card Preview</span>
-              <button
-                onClick={() => setIsPreviewOpen(true)}
-                className="text-blue-600 hover:text-blue-800 font-medium inline-flex items-center gap-1 transition-colors"
-              >
-                <Eye className="w-3.5 h-3.5" />
-                <span>Full PDF Print View</span>
-              </button>
-            </div>
-
-            {/* Card View Container */}
-            <div className="bg-slate-200/80 p-4 rounded-xl border border-slate-300 flex justify-center overflow-x-auto shadow-inner">
-              <CSCForm48Card
-                month={dtrDoc.month}
-                year={dtrDoc.year}
-                employeeName={currentPersonnel.name}
-                records={currentPersonnel.records}
-                signatories={dtrDoc.signatories}
-                schedule={dtrDoc.schedule}
-              />
-            </div>
+          <div className="bg-slate-200/80 p-5 sm:p-8 rounded-2xl border border-slate-300 w-full max-w-[620px] flex justify-center shadow-inner overflow-x-auto">
+            <CSCForm48Card
+              month={dtrDoc.month}
+              year={dtrDoc.year}
+              employeeName={currentPersonnel.name}
+              records={currentPersonnel.records}
+              signatories={dtrDoc.signatories}
+              schedule={dtrDoc.schedule}
+            />
           </div>
         </div>
       </main>
