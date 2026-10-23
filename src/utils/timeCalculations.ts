@@ -32,12 +32,21 @@ export function getDaysInMonth(year: number, month: number): number {
  * Parses time formats like "08:00", "8:00 AM", "1:30 PM", "13:30", "07:55:00"
  * Returns minutes from midnight, or null if invalid/empty
  */
-export function parseTimeToMinutes(timeStr: string | null | undefined): number | null {
+export function parseTimeToMinutes(
+  timeStr: string | null | undefined,
+  assumePmIfHourUnder?: number
+): number | null {
   if (!timeStr) return null;
-  const cleaned = timeStr.trim();
+  let cleaned = String(timeStr)
+    .trim()
+    .replace(/\u00a0/g, ' ')
+    .replace(/[()]/g, '')
+    .replace(/A\.M\./gi, 'AM')
+    .replace(/P\.M\./gi, 'PM')
+    .replace(/(\d{1,2})\.(\d{2})/, '$1:$2');
   if (!cleaned || cleaned === '-' || cleaned.toLowerCase() === 'n/a') return null;
 
-  // Check 12-hour AM/PM format
+  // Check 12-hour AM/PM format (e.g. "08:00 AM", "8:00AM", "8:00", "5:01")
   const ampmMatch = cleaned.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
   if (ampmMatch) {
     let hours = parseInt(ampmMatch[1], 10);
@@ -48,6 +57,8 @@ export function parseTimeToMinutes(timeStr: string | null | undefined): number |
       hours += 12;
     } else if (meridiem === 'AM' && hours === 12) {
       hours = 0;
+    } else if (!meridiem && assumePmIfHourUnder && hours >= 1 && hours <= 7) {
+      hours += 12;
     }
     return hours * 60 + minutes;
   }
@@ -55,9 +66,25 @@ export function parseTimeToMinutes(timeStr: string | null | undefined): number |
   // Check 24-hour HH:MM format
   const militaryMatch = cleaned.match(/^(\d{1,2}):(\d{2})$/);
   if (militaryMatch) {
-    const hours = parseInt(militaryMatch[1], 10);
+    let hours = parseInt(militaryMatch[1], 10);
     const minutes = parseInt(militaryMatch[2], 10);
+    if (assumePmIfHourUnder && hours >= 1 && hours <= 7) {
+      hours += 12;
+    }
     return hours * 60 + minutes;
+  }
+
+  // Check 3-digit or 4-digit military (e.g. "0800", "755", "800")
+  const numMatch = cleaned.match(/^(\d{1,2})(\d{2})$/);
+  if (numMatch) {
+    let hours = parseInt(numMatch[1], 10);
+    const minutes = parseInt(numMatch[2], 10);
+    if (hours >= 0 && hours <= 24 && minutes >= 0 && minutes < 60) {
+      if (assumePmIfHourUnder && hours >= 1 && hours <= 7) {
+        hours += 12;
+      }
+      return hours * 60 + minutes;
+    }
   }
 
   return null;
@@ -91,9 +118,7 @@ export function calculateDailyUndertime(
   record: Pick<DailyRecord, 'inTime' | 'breakTime' | 'resumeTime' | 'outTime' | 'status'>,
   schedule: OfficialSchedule
 ): { undertimeHours: number; undertimeMinutes: number; totalWorkedMinutes: number } {
-  if (record.status !== 'regular') {
-    return { undertimeHours: 0, undertimeMinutes: 0, totalWorkedMinutes: 0 };
-  }
+  const isWeekendOrHoliday = record.status === 'weekend' || record.status === 'holiday';
 
   const schedAmIn = parseTimeToMinutes(schedule.amIn) ?? 480;   // 8:00 AM = 480
   const schedAmOut = parseTimeToMinutes(schedule.amOut) ?? 720;  // 12:00 PM = 720
@@ -102,8 +127,9 @@ export function calculateDailyUndertime(
 
   const actAmIn = parseTimeToMinutes(record.inTime);
   const actAmOut = parseTimeToMinutes(record.breakTime);
-  const actPmIn = parseTimeToMinutes(record.resumeTime);
-  const actPmOut = parseTimeToMinutes(record.outTime);
+  // PM Session columns: 1:00 to 11:59 are PM times (add 12 if under 12)
+  const actPmIn = parseTimeToMinutes(record.resumeTime, 12);
+  const actPmOut = parseTimeToMinutes(record.outTime, 12);
 
   let totalUndertimeMins = 0;
   let amWorkedMins = 0;
@@ -111,18 +137,18 @@ export function calculateDailyUndertime(
 
   // AM Session calculation
   if (actAmIn !== null && actAmOut !== null) {
-    // Late arrival in morning
-    if (actAmIn > schedAmIn) {
-      totalUndertimeMins += (actAmIn - schedAmIn);
+    if (!isWeekendOrHoliday) {
+      if (actAmIn > schedAmIn) {
+        totalUndertimeMins += (actAmIn - schedAmIn);
+      }
+      if (actAmOut < schedAmOut) {
+        totalUndertimeMins += (schedAmOut - actAmOut);
+      }
+      amWorkedMins = Math.max(0, Math.min(actAmOut, schedAmOut) - Math.max(actAmIn, schedAmIn));
+    } else {
+      amWorkedMins = Math.max(0, actAmOut - actAmIn);
     }
-    // Early departure for lunch break
-    if (actAmOut < schedAmOut) {
-      totalUndertimeMins += (schedAmOut - actAmOut);
-    }
-    amWorkedMins = Math.max(0, Math.min(actAmOut, schedAmOut) - Math.max(actAmIn, schedAmIn));
-  } else if (actAmIn === null && actAmOut === null) {
-    // If empty on regular day, that's half day absence (240 mins)
-    // Only count if PM was attended, otherwise treated as full day absence
+  } else if (actAmIn === null && actAmOut === null && !isWeekendOrHoliday) {
     if (actPmIn !== null || actPmOut !== null) {
       totalUndertimeMins += (schedAmOut - schedAmIn); // 240 mins
     }
@@ -130,23 +156,25 @@ export function calculateDailyUndertime(
 
   // PM Session calculation
   if (actPmIn !== null && actPmOut !== null) {
-    // Late arrival from lunch resume
-    if (actPmIn > schedPmIn) {
-      totalUndertimeMins += (actPmIn - schedPmIn);
+    if (!isWeekendOrHoliday) {
+      if (actPmIn > schedPmIn) {
+        totalUndertimeMins += (actPmIn - schedPmIn);
+      }
+      if (actPmOut < schedPmOut) {
+        totalUndertimeMins += (schedPmOut - actPmOut);
+      }
+      pmWorkedMins = Math.max(0, Math.min(actPmOut, schedPmOut) - Math.max(actPmIn, schedPmIn));
+    } else {
+      pmWorkedMins = Math.max(0, actPmOut - actPmIn);
     }
-    // Early departure at end of day
-    if (actPmOut < schedPmOut) {
-      totalUndertimeMins += (schedPmOut - actPmOut);
-    }
-    pmWorkedMins = Math.max(0, Math.min(actPmOut, schedPmOut) - Math.max(actPmIn, schedPmIn));
-  } else if (actPmIn === null && actPmOut === null) {
+  } else if (actPmIn === null && actPmOut === null && !isWeekendOrHoliday) {
     if (actAmIn !== null || actAmOut !== null) {
       totalUndertimeMins += (schedPmOut - schedPmIn); // 240 mins
     }
   }
 
-  const hours = Math.floor(totalUndertimeMins / 60);
-  const minutes = totalUndertimeMins % 60;
+  const hours = isWeekendOrHoliday ? 0 : Math.floor(totalUndertimeMins / 60);
+  const minutes = isWeekendOrHoliday ? 0 : totalUndertimeMins % 60;
   const totalWorked = amWorkedMins + pmWorkedMins;
 
   return {
@@ -239,7 +267,7 @@ export function recalculateRecords(records: DailyRecord[], schedule: OfficialSch
   let sumWorkedMins = 0;
 
   const updatedRecords = records.map(rec => {
-    if (rec.status === 'weekend' || rec.status === 'holiday' || !rec.dateStr) {
+    if (!rec.dateStr) {
       return { ...rec, undertimeHours: 0, undertimeMinutes: 0, hoursWorked: 0 };
     }
 
@@ -255,8 +283,8 @@ export function recalculateRecords(records: DailyRecord[], schedule: OfficialSch
 
     return {
       ...rec,
-      undertimeHours,
-      undertimeMinutes,
+      undertimeHours: rec.status === 'weekend' || rec.status === 'holiday' ? 0 : undertimeHours,
+      undertimeMinutes: rec.status === 'weekend' || rec.status === 'holiday' ? 0 : undertimeMinutes,
       hoursWorked: Number((totalWorkedMinutes / 60).toFixed(1))
     };
   });

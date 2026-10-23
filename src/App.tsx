@@ -7,7 +7,7 @@ import { CSCForm48Card } from './components/CSCForm48Card';
 import { DTRPrintPreview } from './components/DTRPrintPreview';
 import { ExcelImportModal } from './components/ExcelImportModal';
 
-const STORAGE_KEY = 'csc_daily_time_card_persisted_v1';
+const STORAGE_KEY = 'csc_daily_time_card_persisted_v5';
 
 export default function App() {
   const currentYear = 2026;
@@ -25,7 +25,7 @@ export default function App() {
 
   const initialSignatories: Signatories = {
     employee: {
-      name: 'JUAN D. DELA CRUZ',
+      name: 'JAY MANALO',
       designation: '',
       roleLabel: 'Employee'
     },
@@ -41,45 +41,50 @@ export default function App() {
     }
   };
 
-  // Generate initial sample personnel records (fallback only if no saved data in localStorage)
+  // Generate initial sample personnel records reflecting the user's electronic time card image
   const initialPersonnelList: PersonnelData[] = useMemo(() => {
     const staffList = [
-      { id: 'CSC-2026-001', name: 'JUAN D. DELA CRUZ' },
-      { id: 'CSC-2026-002', name: 'MARIA CLARA P. SANTOS' },
-      { id: 'CSC-2026-003', name: 'ENGR. RICARDO B. DIZON' }
+      { id: '1', name: 'JAY MANALO' },
+      { id: '2', name: 'MARIA CLARA P. SANTOS' },
+      { id: '3', name: 'JUAN D. DELA CRUZ' }
     ];
 
-    return staffList.map((staff, staffIdx) => {
+    return staffList.map((staff) => {
       const raw = generateMonthRecords(currentYear, currentMonth, initialSchedule);
       const populated = raw.map((r) => {
-        if (r.status !== 'regular') return r;
         const d = r.day;
 
-        let inTime = (d % 6 === 0) ? '08:05' : (d % 4 === 0) ? '07:49' : '07:56';
-        let breakTime = '12:01';
-        let resumeTime = (d % 5 === 0) ? '12:55' : '12:58';
-        let outTime = (d % 7 === 0) ? '16:50' : '17:04';
-        let remarks = 'Regular';
-
-        if (d === 8 && staffIdx === 0) {
-          inTime = '08:15';
-          remarks = 'Late (15 mins)';
-        } else if (d === 15 && staffIdx === 1) {
-          outTime = '16:45';
-          remarks = 'Undertime (15 mins)';
-        } else if (d === 20) {
-          remarks = 'Flag Ceremony';
-        } else if (d === 22 && staffIdx === 2) {
-          remarks = 'Pass Slip (OB)';
+        // Exactly populate Day 16 (Fri) and Day 17 (Sat) as in the user's Electronic Time Card image
+        // Day 16: In is BLANK, Break 11:38, Resume 11:38, Out 5:00
+        // Day 17: In is BLANK, Break 11:40, Resume 11:55, Out 5:01
+        if (d === 16) {
+          return {
+            ...r,
+            inTime: '',
+            breakTime: '11:38',
+            resumeTime: '11:38',
+            outTime: '5:00',
+            remarks: ''
+          };
         }
-
+        if (d === 17) {
+          return {
+            ...r,
+            inTime: '',
+            breakTime: '11:40',
+            resumeTime: '11:55',
+            outTime: '5:01',
+            remarks: ''
+          };
+        }
+        // All other days: no punch recorded, keep strictly blank
         return {
           ...r,
-          inTime,
-          breakTime,
-          resumeTime,
-          outTime,
-          remarks
+          inTime: '',
+          breakTime: '',
+          resumeTime: '',
+          outTime: '',
+          remarks: ''
         };
       });
 
@@ -143,10 +148,11 @@ export default function App() {
     let totalWorkedMins = 0;
 
     for (const r of currentPersonnel.records) {
-      if (r.status === 'regular' && (r.inTime || r.outTime)) {
+      const hasPunch = Boolean(r.inTime || r.breakTime || r.resumeTime || r.outTime);
+      if (hasPunch) {
         daysPresent += 1;
-        totalUndertimeMins += (r.undertimeHours * 60 + r.undertimeMinutes);
-        totalWorkedMins += (r.hoursWorked * 60);
+        totalUndertimeMins += ((r.undertimeHours || 0) * 60 + (r.undertimeMinutes || 0));
+        totalWorkedMins += ((r.hoursWorked || 0) * 60);
       }
     }
 
@@ -209,10 +215,12 @@ export default function App() {
     }));
   };
 
-  const handleImportSuccess = (importedPersonnel: PersonnelData[]) => {
+  const handleImportSuccess = (importedPersonnel: PersonnelData[], newMonth?: number, newYear?: number) => {
     if (importedPersonnel.length === 0) return;
     setDtrDoc((prev) => ({
       ...prev,
+      month: newMonth || prev.month,
+      year: newYear || prev.year,
       personnelList: importedPersonnel,
       selectedEmployeeIndex: 0
     }));
@@ -283,7 +291,7 @@ export default function App() {
         {/* KPI / Metric Strip */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs">
-            <div className="text-xs text-slate-500 font-medium">Active Personnel</div>
+            <div className="text-xs text-slate-500 font-medium">Active Employee</div>
             <div className="text-base font-bold text-slate-900 mt-1 truncate uppercase">
               {currentPersonnel.name}
             </div>

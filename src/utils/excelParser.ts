@@ -2,144 +2,377 @@ import * as XLSX from 'xlsx';
 import { DailyRecord, OfficialSchedule, PersonnelData } from '../types/csc';
 import { formatCSCTimeDisplay, generateMonthRecords, recalculateRecords } from './timeCalculations';
 
+export interface ParsedEmployeeInfo {
+  name: string;
+  id: string;
+  department?: string;
+  recordsCount: number;
+}
+
 export interface ParsedTimeCardResult {
   fileName: string;
-  detectedEmployees: {
-    name: string;
-    id: string;
-    department?: string;
-    recordsCount: number;
-  }[];
+  detectedMonth?: number;
+  detectedYear?: number;
+  detectedEmployees: ParsedEmployeeInfo[];
   extractedRecordsByEmployee: Record<string, Partial<DailyRecord>[]>;
   rawHeaders: string[];
   rawRowsCount: number;
 }
 
-// Normalized field detector helper
-function normalizeColumnName(col: string): string {
-  return col.toLowerCase().replace(/[^a-z0-9]/g, '');
+export interface ColumnIndexMapping {
+  inColIdx: number | null;
+  breakColIdx: number | null;
+  resumeColIdx: number | null;
+  outColIdx: number | null;
+  dateColIdx: number | null;
+  dayColIdx: number | null;
+  empNameColIdx: number | null;
+  empIdColIdx: number | null;
+  remarksColIdx: number | null;
 }
 
-export function detectColumnMapping(headers: string[]): {
-  inCol: string | null;
-  breakCol: string | null;
-  resumeCol: string | null;
-  outCol: string | null;
-  dateCol: string | null;
-  dayCol: string | null;
-  employeeNameCol: string | null;
-  employeeIdCol: string | null;
-  remarksCol: string | null;
-} {
-  let inCol: string | null = null;
-  let breakCol: string | null = null;
-  let resumeCol: string | null = null;
-  let outCol: string | null = null;
-  let dateCol: string | null = null;
-  let dayCol: string | null = null;
-  let employeeNameCol: string | null = null;
-  let employeeIdCol: string | null = null;
-  let remarksCol: string | null = null;
+// Normalized field detector helper
+export function normalizeColumnName(col: any): string {
+  if (col === null || col === undefined) return '';
+  return String(col)
+    .toLowerCase()
+    .replace(/\u00a0/g, ' ')
+    .replace(/[^a-z0-9]/g, '');
+}
 
-  for (const header of headers) {
-    const norm = normalizeColumnName(header);
+/**
+ * Detects column indices from a table header row
+ * Supports both named columns (In, Break, Resume, Out)
+ * and standard paired columns (Arrival/Departure, In/Out)
+ */
+export function detectColumnIndices(headers: any[]): ColumnIndexMapping {
+  let inColIdx: number | null = null;
+  let breakColIdx: number | null = null;
+  let resumeColIdx: number | null = null;
+  let outColIdx: number | null = null;
+  let dateColIdx: number | null = null;
+  let dayColIdx: number | null = null;
+  let empNameColIdx: number | null = null;
+  let empIdColIdx: number | null = null;
+  let remarksColIdx: number | null = null;
 
-    // Employee name detection (matches Name:, Name, Employee, Employee Name, etc.)
-    if (!employeeNameCol && (
-      norm === 'name' ||
-      norm.startsWith('name') ||
-      norm.includes('name') ||
-      norm.includes('employeename') ||
-      norm.includes('fullname') ||
-      norm === 'employee' ||
-      norm === 'staffname' ||
-      norm.includes('empname') ||
-      norm === 'personnel'
-    )) {
-      employeeNameCol = header;
-      continue;
-    }
-    // Employee ID detection
-    if (!employeeIdCol && (norm.includes('employeeid') || norm.includes('empid') || norm === 'badge' || norm === 'badgenumber' || norm === 'id' || norm === 'bioid')) {
-      employeeIdCol = header;
-      continue;
-    }
-    // Date detection
-    if (!dateCol && (norm.includes('date') || norm === 'logdate' || norm === 'attendance' || norm === 'punchdate')) {
-      dateCol = header;
-      continue;
-    }
-    // Day of month detection
-    if (!dayCol && (norm === 'day' || norm === 'dayofmonth' || norm === 'daynum')) {
-      dayCol = header;
-      continue;
-    }
-    // Remarks detection
-    if (!remarksCol && (norm.includes('remark') || norm.includes('status') || norm.includes('note') || norm.includes('particulars'))) {
-      remarksCol = header;
+  const arrivals: number[] = [];
+  const departures: number[] = [];
+  const ins: number[] = [];
+  const outs: number[] = [];
+
+  for (let idx = 0; idx < headers.length; idx++) {
+    const rawVal = headers[idx];
+    const norm = normalizeColumnName(rawVal);
+    if (!norm) continue;
+
+    // 1. Employee Name
+    if (
+      empNameColIdx === null &&
+      (norm === 'name' ||
+        norm.startsWith('name') ||
+        norm.includes('employeename') ||
+        norm.includes('fullname') ||
+        norm === 'employee' ||
+        norm === 'staffname' ||
+        norm.includes('empname') ||
+        norm === 'personnel')
+    ) {
+      empNameColIdx = idx;
       continue;
     }
 
-    // Electronic Time Card 4 key columns: In, Break, Resume, Out
-    // 1. In (AM Arrival)
-    if (!inCol && (norm === 'in' || norm === 'amarrival' || norm === 'arrivalam' || norm === 'amin' || norm === 'timein' || norm === 'punch1' || norm === 'checkin' || norm === 'arrival' || norm === 'intime')) {
-      inCol = header;
+    // 2. Employee ID / User ID / Badge
+    if (
+      empIdColIdx === null &&
+      (norm.includes('employeeid') ||
+        norm.includes('empid') ||
+        norm === 'badge' ||
+        norm === 'badgenumber' ||
+        norm === 'userid' ||
+        norm === 'id' ||
+        norm === 'bioid')
+    ) {
+      empIdColIdx = idx;
       continue;
     }
-    // 2. Break (Noon/PM Departure / AM Departure / Lunch Out)
-    if (!breakCol && (norm === 'break' || norm === 'lunchout' || norm === 'amout' || norm === 'punch2' || norm === 'departuream' || norm === 'amdeparture' || norm === 'breakout' || norm === 'timeout1')) {
-      breakCol = header;
+
+    // 3. Date column (e.g. "Date", "Log Date", "Punch Date", "Attendance Date")
+    if (
+      dateColIdx === null &&
+      (norm.includes('date') || norm === 'logdate' || norm === 'attendance' || norm === 'punchdate')
+    ) {
+      dateColIdx = idx;
       continue;
     }
-    // 3. Resume (PM Arrival / Lunch In)
-    if (!resumeCol && (norm === 'resume' || norm === 'pmarrival' || norm === 'arrivalpm' || norm === 'lunchin' || norm === 'pmin' || norm === 'punch3' || norm === 'breakin' || norm === 'timein2')) {
-      resumeCol = header;
+
+    // 4. Day of month (e.g. "Day", "Day of Month", "DayNum", "D")
+    if (
+      dayColIdx === null &&
+      (norm === 'day' || norm === 'dayofmonth' || norm === 'daynum' || norm === 'd')
+    ) {
+      dayColIdx = idx;
       continue;
     }
-    // 4. Out (PM Departure / Day Out)
-    if (!outCol && (norm === 'out' || norm === 'pmdeparture' || norm === 'departurepm' || norm === 'pmout' || norm === 'punch4' || norm === 'checkout' || norm === 'departure' || norm === 'outtime')) {
-      outCol = header;
+
+    // 5. Remarks column
+    if (
+      remarksColIdx === null &&
+      (norm.includes('remark') || norm.includes('status') || norm.includes('note') || norm.includes('particulars'))
+    ) {
+      remarksColIdx = idx;
       continue;
+    }
+
+    // Track Arrival / Departure occurrences
+    if (norm.includes('arrival') || norm.includes('dutyin') || norm.includes('onduty')) {
+      arrivals.push(idx);
+    }
+    if (norm.includes('departure') || norm.includes('dutyout') || norm.includes('offduty')) {
+      departures.push(idx);
+    }
+
+    // Check specific Electronic Time Card columns: In, Break, Resume, Out
+    // A. Specific AM Arrival / In
+    if (
+      inColIdx === null &&
+      (norm === 'in' ||
+        norm === 'amin' ||
+        norm === 'inam' ||
+        norm === 'am' ||
+        norm === 'amarrival' ||
+        norm === 'arrivalam' ||
+        norm === 'arrival' ||
+        norm === 'timein' ||
+        norm === 'intime' ||
+        norm === 'timein1' ||
+        norm === 'in1' ||
+        norm === 'punch1' ||
+        norm === 'p1' ||
+        norm === '1' ||
+        norm === 'clockin' ||
+        norm === 'checkin' ||
+        norm === 'dutyin' ||
+        norm === 'onduty' ||
+        norm === 'morningin' ||
+        norm === 'morningarrival' ||
+        norm === 'morning' ||
+        norm === 'signin' ||
+        norm === 'entry' ||
+        norm === 'start')
+    ) {
+      inColIdx = idx;
+      ins.push(idx);
+      continue;
+    }
+
+    // B. Specific AM Departure / Break
+    if (
+      breakColIdx === null &&
+      (norm === 'break' ||
+        norm === 'amout' ||
+        norm === 'amdeparture' ||
+        norm === 'departuream' ||
+        norm === 'lunchout' ||
+        norm === 'breakout' ||
+        norm === 'punch2' ||
+        norm === 'p2' ||
+        norm === '2' ||
+        norm === 'out1' ||
+        norm === 'timeout1' ||
+        norm === 'lunch')
+    ) {
+      breakColIdx = idx;
+      continue;
+    }
+
+    // C. Specific PM Arrival / Resume
+    if (
+      resumeColIdx === null &&
+      (norm === 'resume' ||
+        norm === 'pmin' ||
+        norm === 'pmarrival' ||
+        norm === 'arrivalpm' ||
+        norm === 'lunchin' ||
+        norm === 'breakin' ||
+        norm === 'punch3' ||
+        norm === 'p3' ||
+        norm === '3' ||
+        norm === 'in2' ||
+        norm === 'timein2')
+    ) {
+      resumeColIdx = idx;
+      continue;
+    }
+
+    // D. Specific PM Departure / Out
+    if (
+      outColIdx === null &&
+      (norm === 'out' ||
+        norm === 'timeout' ||
+        norm === 'timeout2' ||
+        norm === 'time-out' ||
+        norm === 'time_out' ||
+        norm === 'pmtimeout' ||
+        norm === 'pmout' ||
+        norm === 'outpm' ||
+        norm === 'pmdeparture' ||
+        norm === 'departurepm' ||
+        norm === 'afternoonout' ||
+        norm === 'eveningout' ||
+        norm === 'checkout' ||
+        norm === 'clockout' ||
+        norm === 'punch4' ||
+        norm === 'p4' ||
+        norm === '4' ||
+        norm === 'out2' ||
+        norm === 'outtime' ||
+        norm === 'departure' ||
+        norm === 'dutyout' ||
+        norm === 'offduty' ||
+        norm === 'signout' ||
+        norm === 'dismissal' ||
+        norm.includes('timeout') ||
+        (norm.endsWith('out') && !norm.includes('break') && !norm.includes('am')))
+    ) {
+      outColIdx = idx;
+      outs.push(idx);
+      continue;
+    }
+
+    // Secondary tracking for generic "in" or "out"
+    if (norm === 'in' || norm.includes('in')) {
+      ins.push(idx);
+    }
+    if (norm === 'out' || norm.includes('out')) {
+      outs.push(idx);
     }
   }
 
-  // Handle case where Break is named "PM Departure" (first departure) and Out is also "PM Departure" (second departure)
-  if (!breakCol || !outCol) {
-    for (const header of headers) {
-      if (header === inCol || header === resumeCol) continue;
-      const norm = normalizeColumnName(header);
-      if (norm.includes('departure') || norm.includes('out') || norm.includes('break')) {
-        if (!breakCol) {
-          breakCol = header;
-        } else if (!outCol && header !== breakCol) {
-          outCol = header;
-        }
-      }
+  // Fallback 1: If Arrival/Departure pairs exist
+  if (arrivals.length >= 1 && inColIdx === null) {
+    inColIdx = arrivals[0];
+  }
+  if (arrivals.length >= 2 && resumeColIdx === null) {
+    resumeColIdx = arrivals[1];
+  }
+  if (departures.length >= 1 && breakColIdx === null) {
+    breakColIdx = departures[0];
+  }
+  if (departures.length >= 2 && outColIdx === null) {
+    outColIdx = departures[1];
+  }
+
+  // Fallback 2: If In/Out pairs exist (e.g. In 1, Out 1, In 2, Out 2)
+  if (ins.length >= 1 && inColIdx === null) {
+    inColIdx = ins[0];
+  }
+  if (ins.length >= 2 && resumeColIdx === null) {
+    resumeColIdx = ins[1];
+  }
+  if (outs.length >= 1 && breakColIdx === null && outs[0] !== outColIdx) {
+    if (outs.length >= 2) {
+      breakColIdx = outs[0];
+      outColIdx = outs[1];
+    } else {
+      outColIdx = outs[0];
+    }
+  }
+
+  // Fallback 3: Positional inference based on Break, Resume, Out
+  // If Break is known, the column immediately before Break is GUARANTEED to be In!
+  if (inColIdx === null && breakColIdx !== null && breakColIdx > 0) {
+    const candidateIdx = breakColIdx - 1;
+    if (candidateIdx !== dateColIdx && candidateIdx !== dayColIdx) {
+      inColIdx = candidateIdx;
+    }
+  }
+
+  // If Resume is known, the column two positions before Resume is In!
+  if (inColIdx === null && resumeColIdx !== null && resumeColIdx > 1) {
+    const candidateIdx = resumeColIdx - 2;
+    if (candidateIdx !== dateColIdx && candidateIdx !== dayColIdx) {
+      inColIdx = candidateIdx;
+    }
+  }
+
+  // If Out is known, the column three positions before Out is In!
+  if (inColIdx === null && outColIdx !== null && outColIdx > 2) {
+    const candidateIdx = outColIdx - 3;
+    if (candidateIdx !== dateColIdx && candidateIdx !== dayColIdx) {
+      inColIdx = candidateIdx;
+    }
+  }
+
+  // Fallback 4: Positional inference for Out (PM Departure) based on Resume, Break, or In
+  if (outColIdx === null && resumeColIdx !== null && resumeColIdx + 1 < headers.length) {
+    outColIdx = resumeColIdx + 1;
+  }
+  if (outColIdx === null && breakColIdx !== null && breakColIdx + 2 < headers.length) {
+    outColIdx = breakColIdx + 2;
+  }
+  if (outColIdx === null && inColIdx !== null && inColIdx + 3 < headers.length) {
+    outColIdx = inColIdx + 3;
+  }
+
+  // Fallback 5: If In is known, and subsequent 3 columns are not mapped,
+  // map them to Break, Resume, Out
+  if (inColIdx !== null) {
+    if (breakColIdx === null && inColIdx + 1 < headers.length) {
+      breakColIdx = inColIdx + 1;
+    }
+    if (resumeColIdx === null && inColIdx + 2 < headers.length) {
+      resumeColIdx = inColIdx + 2;
+    }
+    if (outColIdx === null && inColIdx + 3 < headers.length) {
+      outColIdx = inColIdx + 3;
     }
   }
 
   return {
-    inCol,
-    breakCol,
-    resumeCol,
-    outCol,
-    dateCol,
-    dayCol,
-    employeeNameCol,
-    employeeIdCol,
-    remarksCol
+    inColIdx,
+    breakColIdx,
+    resumeColIdx,
+    outColIdx,
+    dateColIdx,
+    dayColIdx,
+    empNameColIdx,
+    empIdColIdx,
+    remarksColIdx
   };
 }
 
 /**
  * Format any cell value into a clean time string like "07:54" or "12:00"
+ * Handles Date objects, Excel numeric serials, fractions, HHMM integers, and formatted strings
  */
-function parseCellTime(rawVal: any): string {
+export function parseCellTime(rawVal: any): string {
   if (rawVal === null || rawVal === undefined) return '';
 
+  // 1. JavaScript Date object (from XLSX cellDates: true)
+  if (rawVal instanceof Date) {
+    if (isNaN(rawVal.getTime())) return '';
+    const hours = rawVal.getHours();
+    const minutes = rawVal.getMinutes();
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  }
+
+  // 2. Numeric value (Excel time fraction or HHMM integer)
   if (typeof rawVal === 'number') {
+    if (isNaN(rawVal) || rawVal === 0) return '';
+
+    // If integer representation HHMM (e.g. 800 -> 08:00, 1138 -> 11:38, 1700 -> 17:00, 755 -> 07:55)
+    if (rawVal >= 100 && rawVal <= 2400 && Number.isInteger(rawVal)) {
+      const h = Math.floor(rawVal / 100);
+      const m = rawVal % 100;
+      if (h <= 24 && m < 60) {
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      }
+    }
+
+    // Excel day fraction (0.333333 = 8:00 AM)
     let timeFrac = rawVal;
-    if (timeFrac > 1) {
+    if (timeFrac >= 1) {
       timeFrac = timeFrac - Math.floor(timeFrac);
     }
     const totalMinutes = Math.round(timeFrac * 24 * 60);
@@ -148,141 +381,462 @@ function parseCellTime(rawVal: any): string {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
   }
 
-  const str = String(rawVal).trim();
-  if (!str) return '';
+  // 3. String value
+  let str = String(rawVal)
+    .replace(/\u00a0/g, ' ')
+    .replace(/[()]/g, '')
+    .trim();
+  if (!str || str === '-' || str.toLowerCase() === 'n/a') return '';
 
-  if (str.includes(' ') && str.includes(':')) {
-    const parts = str.split(' ');
-    const timeCandidate = parts.find(p => p.includes(':'));
-    if (timeCandidate) {
-      const timeParts = timeCandidate.split(':');
-      if (timeParts.length >= 2) {
-        return `${timeParts[0].padStart(2, '0')}:${timeParts[1].padStart(2, '0')}`;
-      }
+  // Clean A.M. / P.M. with periods to AM / PM
+  str = str.replace(/A\.M\./gi, 'AM').replace(/P\.M\./gi, 'PM');
+
+  // Handle dot separator like "8.00 AM" or "08.00" or "8.00"
+  str = str.replace(/(\d{1,2})\.(\d{2})/, '$1:$2');
+
+  // Standard AM/PM format like "11:38 AM", "8:00 AM", "5:00 PM", "8:00AM"
+  const ampmMatch = str.match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?/i);
+  if (ampmMatch) {
+    let h = parseInt(ampmMatch[1], 10);
+    const m = ampmMatch[2];
+    const meridiem = ampmMatch[3]?.toUpperCase();
+
+    if (meridiem === 'PM' && h < 12) {
+      h += 12;
+    } else if (meridiem === 'AM' && h === 12) {
+      h = 0;
     }
+    return `${String(h).padStart(2, '0')}:${m}`;
   }
 
-  const match = str.match(/(\d{1,2}):(\d{2})/);
-  if (match) {
-    let h = parseInt(match[1], 10);
-    const m = match[2];
-    if (str.toUpperCase().includes('PM') && h < 12) h += 12;
-    if (str.toUpperCase().includes('AM') && h === 12) h = 0;
+  // Military 24-hour HH:MM format like "08:00", "17:01"
+  const militaryMatch = str.match(/^(\d{1,2}):(\d{2})$/);
+  if (militaryMatch) {
+    const h = parseInt(militaryMatch[1], 10);
+    const m = militaryMatch[2];
     return `${String(h).padStart(2, '0')}:${m}`;
+  }
+
+  // 3-digit or 4-digit military string e.g. "0800", "1700", "755", "800"
+  const numMatch = str.match(/^(\d{1,2})(\d{2})$/);
+  if (numMatch) {
+    const h = parseInt(numMatch[1], 10);
+    const m = parseInt(numMatch[2], 10);
+    if (h >= 0 && h <= 24 && m >= 0 && m < 60) {
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
   }
 
   return str;
 }
 
 /**
- * Extracts Day of Month (1-31) from date cell or day cell
+ * Extracts Day, Month, and Year from date cell or day cell
  */
-function extractDayNumber(dateVal: any, dayVal: any): number | null {
+export function extractDateInfo(
+  dateVal: any,
+  dayVal: any
+): { day: number | null; month: number | null; year: number | null } {
+  // If dayVal is given directly (e.g. integer 1-31)
   if (dayVal !== undefined && dayVal !== null && dayVal !== '') {
     const num = parseInt(String(dayVal).trim(), 10);
-    if (!isNaN(num) && num >= 1 && num <= 31) return num;
+    if (!isNaN(num) && num >= 1 && num <= 31) {
+      return { day: num, month: null, year: null };
+    }
   }
 
-  if (dateVal !== undefined && dateVal !== null && dateVal !== '') {
-    if (typeof dateVal === 'number') {
-      const parsedDate = XLSX.SSF.parse_date_code(dateVal);
-      if (parsedDate && parsedDate.d) return parsedDate.d;
+  if (dateVal === undefined || dateVal === null || dateVal === '') {
+    return { day: null, month: null, year: null };
+  }
+
+  // If dateVal is a Date object (from XLSX cellDates: true)
+  if (dateVal instanceof Date) {
+    if (!isNaN(dateVal.getTime())) {
+      return {
+        day: dateVal.getDate(),
+        month: dateVal.getMonth() + 1,
+        year: dateVal.getFullYear()
+      };
     }
-    const str = String(dateVal).trim();
-    const parsed = new Date(str);
-    if (!isNaN(parsed.getTime())) {
-      return parsed.getDate();
+  }
+
+  // If dateVal is an Excel numeric serial
+  if (typeof dateVal === 'number') {
+    if (dateVal >= 1 && dateVal <= 31 && Number.isInteger(dateVal)) {
+      return { day: dateVal, month: null, year: null };
     }
-    const slashParts = str.split(/[/.-]/);
-    if (slashParts.length >= 2) {
-      if (slashParts[0].length === 4) {
-        const d = parseInt(slashParts[2], 10);
-        if (d >= 1 && d <= 31) return d;
-      } else {
-        const p2 = parseInt(slashParts[1], 10);
-        if (p2 >= 1 && p2 <= 31) return p2;
+    const parsedDate = XLSX.SSF.parse_date_code(dateVal);
+    if (parsedDate && parsedDate.d) {
+      return { day: parsedDate.d, month: parsedDate.m, year: parsedDate.y };
+    }
+  }
+
+  const str = String(dateVal).trim();
+  if (!str) return { day: null, month: null, year: null };
+
+  // Standalone day number "1" to "31"
+  if (/^\d{1,2}$/.test(str)) {
+    const num = parseInt(str, 10);
+    if (num >= 1 && num <= 31) {
+      return { day: num, month: null, year: null };
+    }
+  }
+
+  // Matches "2026-10-16 Fri", "2026-10-16", "2026/10/16" (YYYY-MM-DD)
+  const ymdMatch = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (ymdMatch) {
+    const y = parseInt(ymdMatch[1], 10);
+    const m = parseInt(ymdMatch[2], 10);
+    const d = parseInt(ymdMatch[3], 10);
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      return { day: d, month: m, year: y };
+    }
+  }
+
+  // Matches "10-16-2026 Fri", "10/16/2026 Fri", "16-10-2026", "16/10/2026"
+  const mdyOrDmyMatch = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (mdyOrDmyMatch) {
+    const p1 = parseInt(mdyOrDmyMatch[1], 10);
+    const p2 = parseInt(mdyOrDmyMatch[2], 10);
+    const y = parseInt(mdyOrDmyMatch[3], 10);
+
+    // If p1 > 12, it must be DD-MM-YYYY
+    if (p1 > 12 && p1 <= 31 && p2 >= 1 && p2 <= 12) {
+      return { day: p1, month: p2, year: y };
+    }
+    // If p2 > 12, it must be MM-DD-YYYY
+    if (p2 > 12 && p2 <= 31 && p1 >= 1 && p1 <= 12) {
+      return { day: p2, month: p1, year: y };
+    }
+    // Default assumption for biometric files (as in image: "10-16-2026 Fri"): MM-DD-YYYY
+    if (p1 >= 1 && p1 <= 12 && p2 >= 1 && p2 <= 31) {
+      return { day: p2, month: p1, year: y };
+    }
+  }
+
+  // Fallback JS Date parse
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return { day: parsed.getDate(), month: parsed.getMonth() + 1, year: parsed.getFullYear() };
+  }
+
+  return { day: null, month: null, year: null };
+}
+
+/**
+ * Checks if a row is a header row containing table columns
+ */
+function isTableHeaderRow(row: any[]): boolean {
+  if (!Array.isArray(row) || row.length === 0) return false;
+  const rowStrings = row.map((cell: any) => normalizeColumnName(cell));
+  const hasDateOrDay = rowStrings.some(
+    s => s.includes('date') || s === 'day' || s === 'dayofmonth'
+  );
+  const hasPunchCol = rowStrings.some(
+    s =>
+      s === 'in' ||
+      s === 'break' ||
+      s === 'resume' ||
+      s === 'out' ||
+      s.includes('arrival') ||
+      s.includes('departure') ||
+      s.includes('timein') ||
+      s.includes('timeout')
+  );
+  return hasDateOrDay && hasPunchCol;
+}
+
+/**
+ * Extracts employee metadata (Name and User ID) from a single row
+ */
+function extractEmployeeMetadataFromRow(row: any[]): { name: string | null; id: string | null } {
+  let name: string | null = null;
+  let id: string | null = null;
+
+  if (!Array.isArray(row)) return { name, id };
+
+  for (let c = 0; c < row.length; c++) {
+    const cellVal = String(row[c] || '').trim();
+    if (!cellVal) continue;
+
+    // Pattern 1: Same cell "Name : Jay Manalo" or "Employee : Maria Santos"
+    const nameMatch = cellVal.match(/(?:name|employee|personnel)\s*:\s*(.+)$/i);
+    if (nameMatch && nameMatch[1]?.trim() && !name) {
+      name = nameMatch[1].trim();
+    }
+
+    // Pattern 2: Adjacent cell format: Cell c is "Name :" and next non-empty cell has the name
+    if (/^(?:name|employee|personnel)\s*:?$/i.test(cellVal) && !name) {
+      for (let nextC = c + 1; nextC < Math.min(row.length, c + 5); nextC++) {
+        const nextVal = String(row[nextC] || '').trim();
+        if (nextVal && !/^(?:user\s*id|id|sche|date|day)/i.test(nextVal)) {
+          name = nextVal;
+          break;
+        }
+      }
+    }
+
+    // Pattern 3: Same cell "User ID : 1" or "Badge : 004"
+    const idMatch = cellVal.match(/(?:user\s*id|employee\s*id|badge\s*no|badge|id)\s*:\s*(\w+)/i);
+    if (idMatch && idMatch[1]?.trim() && !id) {
+      id = idMatch[1].trim();
+    }
+
+    // Pattern 4: Adjacent cell format: Cell c is "User ID :" and next non-empty cell has the id
+    if (/^(?:user\s*id|employee\s*id|badge|id)\s*:?$/i.test(cellVal) && !id) {
+      for (let nextC = c + 1; nextC < Math.min(row.length, c + 5); nextC++) {
+        const nextVal = String(row[nextC] || '').trim();
+        if (nextVal) {
+          id = nextVal;
+          break;
+        }
       }
     }
   }
 
-  return null;
+  return { name, id };
 }
 
+/**
+ * Parses full Excel file across all worksheets and handles:
+ * 1. Multiple worksheets (one employee per sheet or multi-sheet exports)
+ * 2. Repeating employee blocks within a single sheet (stacked Electronic Time Card tables)
+ * 3. Flat tables with Name / Employee as a column
+ * 4. All punch columns (In = AM Arrival, Break = AM Departure, Resume = PM Arrival, Out = PM Departure)
+ */
 export function parseExcelFile(
   fileBuffer: ArrayBuffer,
   fileName: string
 ): ParsedTimeCardResult {
   const workbook = XLSX.read(fileBuffer, { type: 'array', cellDates: true });
-  const firstSheetName = workbook.SheetNames[0];
-  const worksheet = workbook.Sheets[firstSheetName];
-
-  const rawRows: Record<string, any>[] = XLSX.utils.sheet_to_json(worksheet, {
-    defval: '',
-    raw: false,
-    dateNF: 'yyyy-mm-dd'
-  });
-
-  if (rawRows.length === 0) {
-    throw new Error('The uploaded spreadsheet contains no data rows.');
+  if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
+    throw new Error('The uploaded file contains no readable worksheets.');
   }
-
-  const rawHeaders = Object.keys(rawRows[0]);
-  const mapping = detectColumnMapping(rawHeaders);
 
   const detectedEmployeesMap = new Map<string, { id: string; name: string; count: number }>();
   const extractedRecordsByEmployee: Record<string, Partial<DailyRecord>[]> = {};
+  let detectedMonth: number | undefined;
+  let detectedYear: number | undefined;
+  let globalRawRowsCount = 0;
+  let representativeHeaders: string[] = [];
+  let fallbackMapping: ColumnIndexMapping | null = null;
 
-  rawRows.forEach((row, rowIndex) => {
-    let empName = mapping.employeeNameCol ? String(row[mapping.employeeNameCol] || '').trim() : '';
-    let empId = mapping.employeeIdCol ? String(row[mapping.employeeIdCol] || '').trim() : '';
+  // Iterate across ALL worksheets in the workbook
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    if (!worksheet) continue;
 
-    if (!empName && !empId) {
-      empName = 'DEFAULT_EMPLOYEE';
-    } else if (!empName && empId) {
-      empName = `Employee ${empId}`;
-    }
-
-    const empKey = empName;
-    if (!detectedEmployeesMap.has(empKey)) {
-      detectedEmployeesMap.set(empKey, { id: empId || `EMP-${detectedEmployeesMap.size + 1}`, name: empName, count: 0 });
-      extractedRecordsByEmployee[empKey] = [];
-    }
-
-    const empData = detectedEmployeesMap.get(empKey)!;
-    empData.count += 1;
-
-    const dayVal = mapping.dayCol ? row[mapping.dayCol] : undefined;
-    const dateVal = mapping.dateCol ? row[mapping.dateCol] : undefined;
-    const dayNum = extractDayNumber(dateVal, dayVal) ?? ((rowIndex % 31) + 1);
-
-    const inTime = mapping.inCol ? parseCellTime(row[mapping.inCol]) : '';
-    const breakTime = mapping.breakCol ? parseCellTime(row[mapping.breakCol]) : '';
-    const resumeTime = mapping.resumeCol ? parseCellTime(row[mapping.resumeCol]) : '';
-    const outTime = mapping.outCol ? parseCellTime(row[mapping.outCol]) : '';
-    const remarks = mapping.remarksCol ? String(row[mapping.remarksCol] || '').trim() : '';
-
-    extractedRecordsByEmployee[empKey].push({
-      day: dayNum,
-      inTime,
-      breakTime,
-      resumeTime,
-      outTime,
-      remarks
+    const grid: any[][] = XLSX.utils.sheet_to_json(worksheet, {
+      header: 1,
+      defval: '',
+      raw: false,
+      dateNF: 'yyyy-mm-dd'
     });
-  });
+
+    if (!grid || grid.length === 0) continue;
+    globalRawRowsCount += grid.length;
+
+    // Active state for this sheet / current block
+    let activeEmpName: string | null = null;
+    let activeEmpId: string | null = null;
+    let currentMapping: ColumnIndexMapping | null = fallbackMapping ? { ...fallbackMapping } : null;
+
+    // If sheet name itself looks like a person's name (not "Sheet1", "Page 1", etc.)
+    const sheetNameClean = sheetName.trim();
+    const isGenericSheet = /^sheet\s*\d+$/i.test(sheetNameClean) || /^page\s*\d+$/i.test(sheetNameClean);
+    if (!isGenericSheet && sheetNameClean.length > 2) {
+      activeEmpName = sheetNameClean;
+    }
+
+    for (let r = 0; r < grid.length; r++) {
+      const row = grid[r];
+      if (!row || !Array.isArray(row) || row.every((c: any) => String(c || '').trim() === '')) {
+        continue;
+      }
+
+      // Check if this row contains Employee Metadata (e.g., "User ID : 1   Name : Jay Manalo")
+      const meta = extractEmployeeMetadataFromRow(row);
+      if (meta.name) {
+        activeEmpName = meta.name.replace(/^(name\s*:\s*|employee\s*:\s*)/i, '').trim();
+      }
+      if (meta.id) {
+        activeEmpId = meta.id;
+      }
+
+      // Check if this row is a Table Header Row
+      if (isTableHeaderRow(row)) {
+        currentMapping = detectColumnIndices(row);
+        fallbackMapping = { ...currentMapping };
+        if (representativeHeaders.length === 0) {
+          representativeHeaders = row.map(c => String(c || '').trim());
+        }
+        continue; // Header row, move to data rows
+      }
+
+      // If we don't have a mapping yet, attempt to infer from current row if it looks like a header
+      if (!currentMapping) {
+        const rowNorm = row.map(c => normalizeColumnName(c));
+        if (rowNorm.some(s => s.includes('date') || s === 'in' || s === 'break')) {
+          currentMapping = detectColumnIndices(row);
+          fallbackMapping = { ...currentMapping };
+          if (representativeHeaders.length === 0) {
+            representativeHeaders = row.map(c => String(c || '').trim());
+          }
+          continue;
+        }
+      }
+
+      // If mapping still null, use fallbackMapping
+      if (!currentMapping && fallbackMapping) {
+        currentMapping = { ...fallbackMapping };
+      }
+
+      // Now inspect if this is a data row
+      if (currentMapping) {
+        const getCell = (colIdx: number | null): any => {
+          if (colIdx === null || colIdx < 0 || colIdx >= row.length) return '';
+          return row[colIdx];
+        };
+
+        // Check if row has an in-line employee name column
+        if (currentMapping.empNameColIdx !== null) {
+          const rowEmp = String(getCell(currentMapping.empNameColIdx) || '').trim();
+          if (rowEmp && !/^(name|employee)$/i.test(rowEmp)) {
+            activeEmpName = rowEmp.replace(/^(name\s*:\s*|employee\s*:\s*)/i, '').trim();
+          }
+        }
+        if (currentMapping.empIdColIdx !== null) {
+          const rowId = String(getCell(currentMapping.empIdColIdx) || '').trim();
+          if (rowId && !/^(id|userid|badge)$/i.test(rowId)) {
+            activeEmpId = rowId;
+          }
+        }
+
+        const dateVal = getCell(currentMapping.dateColIdx);
+        const dayVal = getCell(currentMapping.dayColIdx);
+
+        // Try extracting date info from date/day columns
+        let dateInfo = extractDateInfo(dateVal, dayVal);
+
+        // If not found in designated column, check if col 0 has a date
+        if (!dateInfo.day && row.length > 0) {
+          dateInfo = extractDateInfo(row[0], undefined);
+        }
+
+        // If no day found, check if any cell in row looks like a date
+        if (!dateInfo.day) {
+          for (let c = 0; c < Math.min(row.length, 3); c++) {
+            const candidate = extractDateInfo(row[c], undefined);
+            if (candidate.day) {
+              dateInfo = candidate;
+              break;
+            }
+          }
+        }
+
+        // If this row has a valid day (1-31) and is not a total/header row
+        if (dateInfo.day && dateInfo.day >= 1 && dateInfo.day <= 31) {
+          if (dateInfo.month && !detectedMonth) {
+            detectedMonth = dateInfo.month;
+          }
+          if (dateInfo.year && !detectedYear) {
+            detectedYear = dateInfo.year;
+          }
+
+          // Determine final employee key
+          let finalEmpName = activeEmpName;
+          if (!finalEmpName && activeEmpId) {
+            finalEmpName = `Employee ${activeEmpId}`;
+          } else if (!finalEmpName) {
+            finalEmpName = 'EMPLOYEE';
+          }
+
+          const empKey = finalEmpName.trim().toUpperCase();
+
+          if (!detectedEmployeesMap.has(empKey)) {
+            detectedEmployeesMap.set(empKey, {
+              id: activeEmpId || `EMP-${detectedEmployeesMap.size + 1}`,
+              name: empKey,
+              count: 0
+            });
+            extractedRecordsByEmployee[empKey] = [];
+          }
+
+          const empData = detectedEmployeesMap.get(empKey)!;
+          empData.count += 1;
+
+          // DYNAMIC IN-TIME HEURISTIC:
+          // Ensure inColIdx is always resolved properly for every employee
+          if (currentMapping.inColIdx === null && currentMapping.breakColIdx !== null && currentMapping.breakColIdx > 0) {
+            currentMapping.inColIdx = currentMapping.breakColIdx - 1;
+          }
+
+          // Ensure outColIdx is always resolved properly for every employee
+          if (currentMapping.outColIdx === null && currentMapping.resumeColIdx !== null && currentMapping.resumeColIdx + 1 < row.length) {
+            currentMapping.outColIdx = currentMapping.resumeColIdx + 1;
+          } else if (currentMapping.outColIdx === null && currentMapping.breakColIdx !== null && currentMapping.breakColIdx + 2 < row.length) {
+            currentMapping.outColIdx = currentMapping.breakColIdx + 2;
+          } else if (currentMapping.outColIdx === null && currentMapping.inColIdx !== null && currentMapping.inColIdx + 3 < row.length) {
+            currentMapping.outColIdx = currentMapping.inColIdx + 3;
+          }
+
+          // Extract punches according to:
+          // In = AM Arrival, Break = AM Departure, Resume = PM Arrival, Out = PM Departure
+          const inTime = parseCellTime(getCell(currentMapping.inColIdx));
+          const breakTime = parseCellTime(getCell(currentMapping.breakColIdx));
+          const resumeTime = parseCellTime(getCell(currentMapping.resumeColIdx));
+          let outTime = parseCellTime(getCell(currentMapping.outColIdx));
+
+          // Fallback for afternoon departure: if outTime is empty, check column adjacent to resume
+          if (!outTime && currentMapping.resumeColIdx !== null && currentMapping.resumeColIdx + 1 < row.length) {
+            const candidateOut = parseCellTime(row[currentMapping.resumeColIdx + 1]);
+            if (candidateOut) {
+              outTime = candidateOut;
+              currentMapping.outColIdx = currentMapping.resumeColIdx + 1;
+            }
+          }
+
+          // When the time in is blank, leave it blank:
+          // Do not infer or fabricate time in from other columns.
+
+          const remarks = currentMapping.remarksColIdx !== null
+            ? String(getCell(currentMapping.remarksColIdx) || '').trim()
+            : '';
+
+          extractedRecordsByEmployee[empKey].push({
+            day: dateInfo.day,
+            inTime,
+            breakTime,
+            resumeTime,
+            outTime,
+            remarks
+          });
+        }
+      }
+    }
+  }
+
+  // If no employees detected, throw helpful error
+  if (detectedEmployeesMap.size === 0) {
+    throw new Error(
+      'Could not detect valid electronic time card records in the uploaded spreadsheet. Please ensure the file contains Date, In, Break, Resume, and Out columns.'
+    );
+  }
 
   const detectedEmployees = Array.from(detectedEmployeesMap.values()).map(e => ({
-    name: e.name === 'DEFAULT_EMPLOYEE' ? 'Primary Employee (From File)' : e.name,
+    name: e.name,
     id: e.id,
     recordsCount: e.count
   }));
 
   return {
     fileName,
+    detectedMonth,
+    detectedYear,
     detectedEmployees,
     extractedRecordsByEmployee,
-    rawHeaders,
-    rawRowsCount: rawRows.length
+    rawHeaders: representativeHeaders,
+    rawRowsCount: globalRawRowsCount
   };
 }
 
@@ -297,7 +851,20 @@ export function mergeParsedLogsIntoRecords(
   const logByDay = new Map<number, Partial<DailyRecord>>();
   for (const log of importedLogs) {
     if (log.day && log.day >= 1 && log.day <= 31) {
-      logByDay.set(log.day, log);
+      const existing = logByDay.get(log.day);
+      if (!existing) {
+        logByDay.set(log.day, { ...log });
+      } else {
+        // Merge so we don't overwrite non-empty punches with empty ones if there are multiple entries
+        logByDay.set(log.day, {
+          day: log.day,
+          inTime: log.inTime || existing.inTime || '',
+          breakTime: log.breakTime || existing.breakTime || '',
+          resumeTime: log.resumeTime || existing.resumeTime || '',
+          outTime: log.outTime || existing.outTime || '',
+          remarks: log.remarks || existing.remarks || ''
+        });
+      }
     }
   }
 
@@ -308,10 +875,12 @@ export function mergeParsedLogsIntoRecords(
     }
 
     const status = record.status;
-    const inTime = importData.inTime ? formatCSCTimeDisplay(importData.inTime) : record.inTime;
-    const breakTime = importData.breakTime ? formatCSCTimeDisplay(importData.breakTime) : record.breakTime;
-    const resumeTime = importData.resumeTime ? formatCSCTimeDisplay(importData.resumeTime) : record.resumeTime;
-    const outTime = importData.outTime ? formatCSCTimeDisplay(importData.outTime) : record.outTime;
+
+    // Cleanly display times on CSC Form 48 format; when blank, leave it blank
+    const inTime = importData.inTime ? formatCSCTimeDisplay(importData.inTime) : '';
+    const breakTime = importData.breakTime ? formatCSCTimeDisplay(importData.breakTime) : '';
+    const resumeTime = importData.resumeTime ? formatCSCTimeDisplay(importData.resumeTime) : '';
+    const outTime = importData.outTime ? formatCSCTimeDisplay(importData.outTime) : '';
     const remarks = importData.remarks !== undefined ? importData.remarks : record.remarks;
 
     return {
@@ -330,7 +899,6 @@ export function mergeParsedLogsIntoRecords(
 
 /**
  * Converts the full parsed Excel result into an array of PersonnelData objects
- * for both All Personnel and Individual printing!
  */
 export function convertParsedResultToPersonnelList(
   parseResult: ParsedTimeCardResult,
@@ -338,13 +906,17 @@ export function convertParsedResultToPersonnelList(
   month: number,
   schedule: OfficialSchedule
 ): PersonnelData[] {
-  return parseResult.detectedEmployees.map((emp) => {
+  return parseResult.detectedEmployees.map(emp => {
     const baseRecords = generateMonthRecords(year, month, schedule);
     const importedLogs = parseResult.extractedRecordsByEmployee[emp.name] || [];
     const merged = mergeParsedLogsIntoRecords(baseRecords, importedLogs, schedule);
+    let cleanName = emp.name.replace(/^(name\s*:\s*|employee\s*:\s*)/i, '').trim();
+    if (!cleanName || cleanName === 'DEFAULT_EMPLOYEE' || cleanName === 'EMPLOYEE' || cleanName.toLowerCase() === 'name') {
+      cleanName = 'EMPLOYEE';
+    }
     return {
       id: emp.id,
-      name: (emp.name === 'DEFAULT_EMPLOYEE' || !emp.name) ? 'EMPLOYEE' : emp.name.toUpperCase(),
+      name: cleanName.toUpperCase(),
       records: merged
     };
   });
@@ -352,7 +924,6 @@ export function convertParsedResultToPersonnelList(
 
 /**
  * Generates an official Excel template with multi-personnel records
- * and columns: Employee ID, Employee Name, Date, Day, In, Break, Resume, Out, Remarks
  */
 export function generateSampleExcelFile(month: number = 10, year: number = 2026): {
   blob: Blob;
@@ -362,9 +933,9 @@ export function generateSampleExcelFile(month: number = 10, year: number = 2026)
   const sampleData: any[] = [];
 
   const sampleStaff = [
-    { id: 'CSC-2026-001', name: 'JUAN D. DELA CRUZ' },
-    { id: 'CSC-2026-002', name: 'MARIA CLARA P. SANTOS' },
-    { id: 'CSC-2026-003', name: 'ENGR. RICARDO B. DIZON' }
+    { id: '1', name: 'JAY MANALO' },
+    { id: '2', name: 'MARIA CLARA P. SANTOS' },
+    { id: '3', name: 'JUAN D. DELA CRUZ' }
   ];
 
   sampleStaff.forEach((staff, staffIdx) => {
@@ -375,8 +946,8 @@ export function generateSampleExcelFile(month: number = 10, year: number = 2026)
 
       if (isWeekend) {
         sampleData.push({
-          'Employee ID': staff.id,
-          'Employee Name': staff.name,
+          'User ID': staff.id,
+          'Name': staff.name,
           'Date': `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
           'Day': d,
           'In': '',
@@ -403,41 +974,22 @@ export function generateSampleExcelFile(month: number = 10, year: number = 2026)
             ? '16:50'
             : '17:05';
 
-        let remarks = 'Regular';
-        if (d === 8 && staffIdx === 0) remarks = 'Late (15 mins)';
-        if (d === 15 && staffIdx === 1) remarks = 'Undertime (15 mins)';
-        if (d === 20) remarks = 'Flag Ceremony';
-        if (d === 22 && staffIdx === 2) remarks = 'Pass Slip (OB)';
-
         sampleData.push({
-          'Employee ID': staff.id,
-          'Employee Name': staff.name,
+          'User ID': staff.id,
+          'Name': staff.name,
           'Date': `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
           'Day': d,
           'In': morningVariance,
           'Break': lunchOutVariance,
           'Resume': lunchInVariance,
           'Out': afternoonOutVariance,
-          'Remarks': remarks
+          'Remarks': ''
         });
       }
     }
   });
 
   const worksheet = XLSX.utils.json_to_sheet(sampleData);
-
-  worksheet['!cols'] = [
-    { wch: 16 }, // Employee ID
-    { wch: 26 }, // Employee Name
-    { wch: 14 }, // Date
-    { wch: 6 },  // Day
-    { wch: 10 }, // In
-    { wch: 10 }, // Break
-    { wch: 10 }, // Resume
-    { wch: 10 }, // Out
-    { wch: 28 }  // Remarks (wide)
-  ];
-
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Electronic Time Card');
 
@@ -448,6 +1000,6 @@ export function generateSampleExcelFile(month: number = 10, year: number = 2026)
 
   return {
     blob,
-    fileName: `CSC_Electronic_Time_Card_Template_${year}_${String(month).padStart(2, '0')}.xlsx`
+    fileName: `Electronic_Time_Card_${year}_${String(month).padStart(2, '0')}.xlsx`
   };
 }

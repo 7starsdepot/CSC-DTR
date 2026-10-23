@@ -37,7 +37,7 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
             CSC Form 48 · Daily Time Card Generator
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Electronic Excel import: <span className="font-semibold text-slate-700">In = AM Arrival</span> · <span className="font-semibold text-slate-700">Break = PM Departure</span> · <span className="font-semibold text-slate-700">Resume = PM Arrival</span> · <span className="font-semibold text-slate-700">Out = PM Departure</span>.
+            Electronic Excel import: <span className="font-semibold text-slate-700">Name: = Employee</span> · <span className="font-semibold text-slate-700">In = AM Arrival</span> · <span className="font-semibold text-slate-700">Break = PM Departure</span> · <span className="font-semibold text-slate-700">Resume = PM Arrival</span> · <span className="font-semibold text-slate-700">Out = PM Departure</span>.
           </p>
         </div>
 
@@ -68,7 +68,7 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
           <div className="flex items-center justify-between pb-2 border-b border-slate-100">
             <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm">
               <User className="w-4 h-4 text-blue-600" />
-              <span>Imported Personnel</span>
+              <span>Imported Employee Records</span>
             </div>
             <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
               {personnelList.length} Staff
@@ -78,7 +78,7 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
           {/* Personnel Selection Dropdown */}
           <div>
             <label className="block text-[11px] font-medium text-slate-600 mb-1">
-              Select Personnel Record:
+              Select Employee Record (Name: = Employee):
             </label>
             <select
               value={selectedEmployeeIndex}

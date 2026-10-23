@@ -52,10 +52,10 @@ export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
       {/* Employee Name Box */}
       <div className="text-center mt-2 mb-2">
         <div className="font-bold text-sm tracking-wide border-b border-black uppercase pb-0.5 px-4 inline-block min-w-[280px]">
-          {employeeName || 'JUAN D. DELA CRUZ'}
+          {employeeName || 'EMPLOYEE'}
         </div>
         <div className="text-[9px] uppercase tracking-wider text-black/80 mt-0.5">
-          (Name of Employee)
+          (Employee)
         </div>
       </div>
 
@@ -124,10 +124,10 @@ export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
             </tr>
             {/* Sub Header Row */}
             <tr className="border-b border-black bg-slate-50/50 text-[8.5px]">
-              <th className="border-r border-black p-0.5 w-[42px] font-semibold">Arrival</th>
-              <th className="border-r border-black p-0.5 w-[42px] font-semibold">Departure</th>
-              <th className="border-r border-black p-0.5 w-[42px] font-semibold">Arrival</th>
-              <th className="border-r border-black p-0.5 w-[42px] font-semibold">Departure</th>
+              <th className="border-r border-black p-0.5 w-[48px] font-semibold">Arrival</th>
+              <th className="border-r border-black p-0.5 w-[48px] font-semibold">Departure</th>
+              <th className="border-r border-black p-0.5 w-[48px] font-semibold">Arrival</th>
+              <th className="border-r border-black p-0.5 w-[48px] font-semibold">Departure</th>
               <th className="border-r border-black p-0.5 w-[28px] font-semibold">Hours</th>
               <th className="border-r border-black p-0.5 w-[28px] font-semibold">Min.</th>
             </tr>
@@ -147,6 +147,10 @@ export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
                 ? 'SUNDAY'
                 : '';
 
+              // If any punches are recorded, ALWAYS display all the data recorded (do not hide behind SATURDAY/SUNDAY label)
+              const hasRecordedData = Boolean(r.inTime || r.breakTime || r.resumeTime || r.outTime);
+              const shouldSpanSpecial = isSpecial && spanLabel && !hasRecordedData;
+
               return (
                 <tr
                   key={r.day}
@@ -158,7 +162,7 @@ export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
                     {r.day}
                   </td>
 
-                  {isSpecial && spanLabel ? (
+                  {shouldSpanSpecial ? (
                     <>
                       <td
                         colSpan={4}
@@ -173,20 +177,20 @@ export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
                     </>
                   ) : (
                     <>
-                      {/* AM Arrival */}
-                      <td className="border-r border-black text-[9.5px] tabular-nums p-0 align-middle">
+                      {/* AM Arrival (In) - recorded as is; blank when empty */}
+                      <td className="border-r border-black text-[9px] tabular-nums px-0.5 whitespace-nowrap align-middle">
                         {r.inTime || ''}
                       </td>
-                      {/* AM / Noon Departure */}
-                      <td className="border-r border-black text-[9.5px] tabular-nums p-0 align-middle">
+                      {/* AM Departure (Break) - recorded as is */}
+                      <td className="border-r border-black text-[9px] tabular-nums px-0.5 whitespace-nowrap align-middle">
                         {r.breakTime || ''}
                       </td>
-                      {/* PM Arrival */}
-                      <td className="border-r border-black text-[9.5px] tabular-nums p-0 align-middle">
+                      {/* PM Arrival (Resume) - recorded as is */}
+                      <td className="border-r border-black text-[9px] tabular-nums px-0.5 whitespace-nowrap align-middle">
                         {r.resumeTime || ''}
                       </td>
-                      {/* PM Departure */}
-                      <td className="border-r border-black text-[9.5px] tabular-nums p-0 align-middle">
+                      {/* PM Departure (Out) - recorded as is */}
+                      <td className="border-r border-black text-[9px] tabular-nums px-0.5 whitespace-nowrap align-middle">
                         {r.outTime || ''}
                       </td>
                       {/* Undertime Hours */}
