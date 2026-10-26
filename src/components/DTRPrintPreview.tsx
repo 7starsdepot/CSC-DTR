@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Printer, ArrowLeft, User, Users } from 'lucide-react';
+import { Printer, ArrowLeft, User, Users, CheckCircle2 } from 'lucide-react';
 import { DTRDocument } from '../types/csc';
 import { CSCForm48Card } from './CSCForm48Card';
 
@@ -28,14 +28,14 @@ export const DTRPrintPreview: React.FC<DTRPrintPreviewProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-slate-100/90 text-slate-900 pb-12">
+    <div className="min-h-screen bg-slate-100/90 text-slate-900 pb-12 print:pb-0 print:bg-white">
       {/* Non-Printable Header & Toolbar */}
       <div className="no-print sticky top-0 z-30 bg-white border-b border-slate-200 shadow-xs">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <button
               onClick={onExitPreview}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back to Records</span>
@@ -57,7 +57,7 @@ export const DTRPrintPreview: React.FC<DTRPrintPreviewProps> = ({
                 <button
                   type="button"
                   onClick={() => setPrintMode('single')}
-                  className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                  className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
                     printMode === 'single'
                       ? 'bg-white text-slate-900 shadow-2xs font-semibold'
                       : 'text-slate-600 hover:text-slate-900'
@@ -68,7 +68,7 @@ export const DTRPrintPreview: React.FC<DTRPrintPreviewProps> = ({
                 <button
                   type="button"
                   onClick={() => setPrintMode('all')}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-medium transition-colors ${
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
                     printMode === 'all'
                       ? 'bg-white text-blue-700 shadow-2xs font-semibold'
                       : 'text-slate-600 hover:text-slate-900'
@@ -87,7 +87,7 @@ export const DTRPrintPreview: React.FC<DTRPrintPreviewProps> = ({
                 <select
                   value={selectedEmployeeIndex}
                   onChange={(e) => onSelectEmployeeIndex(parseInt(e.target.value, 10))}
-                  className="px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg font-medium text-slate-800 focus:ring-1 focus:ring-blue-500 uppercase"
+                  className="px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg font-medium text-slate-800 focus:ring-1 focus:ring-blue-500 uppercase cursor-pointer"
                 >
                   {personnelList.map((p, idx) => (
                     <option key={idx} value={idx}>
@@ -101,25 +101,27 @@ export const DTRPrintPreview: React.FC<DTRPrintPreviewProps> = ({
             {/* Print Action Button */}
             <button
               onClick={handlePrint}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-sm transition-colors shrink-0"
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-sm transition-colors shrink-0 cursor-pointer"
             >
               <Printer className="w-4 h-4" />
-              <span>{printMode === 'all' ? `Print All ${personnelList.length} Cards (A4)` : 'Print to PDF (A4)'}</span>
+              <span>{printMode === 'all' ? `Print All ${personnelList.length} (1 Page/Employee)` : 'Print to PDF (1 Page)'}</span>
             </button>
           </div>
         </div>
 
-        {/* Tip Banner with Default A4 indicator */}
-        <div className="bg-slate-50 border-t border-slate-200 py-1.5 px-4 text-center text-xs text-slate-700">
-          📄 <span className="font-semibold text-slate-900">Default Paper Size:</span>{' '}
-          <strong>A4 Portrait</strong> (210 × 297 mm). In your browser print dialog, paper size defaults to <strong>A4</strong>.
+        {/* Status Banner: 1 Page Per Employee & Default A4 */}
+        <div className="bg-emerald-50 border-t border-emerald-200 py-1.5 px-4 text-center text-xs text-emerald-900 flex items-center justify-center gap-2">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+          <span>
+            <strong>1 Page per Employee Guaranteed:</strong> Calibrated to fit completely on a single <strong>A4</strong> (or Letter) portrait page without spilling over.
+          </span>
         </div>
       </div>
 
       {/* Printable Area */}
-      <div className="print-container max-w-4xl mx-auto mt-6 px-4 flex flex-col items-center">
+      <div className="print-container max-w-4xl mx-auto mt-6 px-4 flex flex-col items-center print:m-0 print:p-0 print:max-w-none print:w-full">
         {printMode === 'single' ? (
-          <>
+          <div className="dtr-page-wrapper w-full flex flex-col items-center">
             <div className="no-print text-center text-xs font-semibold text-slate-600 mb-2">
               Civil Service Form No. 48: <strong className="text-slate-900 uppercase">{currentPersonnel.name}</strong>
             </div>
@@ -131,11 +133,14 @@ export const DTRPrintPreview: React.FC<DTRPrintPreviewProps> = ({
               signatories={signatories}
               schedule={schedule}
             />
-          </>
+          </div>
         ) : (
-          <div className="w-full space-y-8 flex flex-col items-center">
+          <div className="w-full space-y-8 print:space-y-0 flex flex-col items-center">
             {personnelList.map((person, idx) => (
-              <div key={idx} className="w-full flex flex-col items-center page-break-after">
+              <div
+                key={idx}
+                className="dtr-page-wrapper w-full flex flex-col items-center"
+              >
                 <div className="no-print text-center text-xs font-semibold text-slate-600 mb-2">
                   Card {idx + 1} of {personnelList.length}: <strong className="text-slate-900 uppercase">{person.name}</strong>
                 </div>
