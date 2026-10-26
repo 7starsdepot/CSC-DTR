@@ -799,9 +799,12 @@ export function parseExcelFile(
           // When the time in is blank, leave it blank:
           // Do not infer or fabricate time in from other columns.
 
-          const remarks = currentMapping.remarksColIdx !== null
+          let remarks = currentMapping.remarksColIdx !== null
             ? String(getCell(currentMapping.remarksColIdx) || '').trim()
             : '';
+          if (/^(saturday|sunday)$/i.test(remarks)) {
+            remarks = '';
+          }
 
           extractedRecordsByEmployee[empKey].push({
             day: dateInfo.day,
@@ -954,7 +957,7 @@ export function generateSampleExcelFile(month: number = 10, year: number = 2026)
           'Break': '',
           'Resume': '',
           'Out': '',
-          'Remarks': dayOfWeek === 6 ? 'SATURDAY' : 'SUNDAY'
+          'Remarks': ''
         });
       } else {
         const morningVariance =

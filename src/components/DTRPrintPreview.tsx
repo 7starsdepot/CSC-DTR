@@ -43,8 +43,10 @@ export const DTRPrintPreview: React.FC<DTRPrintPreviewProps> = ({
 
             <div className="h-4 w-[1px] bg-slate-200 hidden sm:block" />
 
-            <div className="text-xs font-semibold text-slate-800">
-              CSC Form 48 · Daily Time Record
+            <div className="flex items-center gap-2">
+              <div className="text-xs font-bold text-slate-800">
+                DPWH Daily Time Record · CSC Form 48
+              </div>
             </div>
           </div>
 
@@ -102,15 +104,15 @@ export const DTRPrintPreview: React.FC<DTRPrintPreviewProps> = ({
               className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-sm transition-colors shrink-0"
             >
               <Printer className="w-4 h-4" />
-              <span>{printMode === 'all' ? `Print All ${personnelList.length} Cards` : 'Print to PDF'}</span>
+              <span>{printMode === 'all' ? `Print All ${personnelList.length} Cards (A4)` : 'Print to PDF (A4)'}</span>
             </button>
           </div>
         </div>
 
-        {/* Tip Banner */}
-        <div className="bg-slate-50 border-t border-slate-200 py-1.5 px-4 text-center text-xs text-slate-600">
-          💡 <span className="font-medium">Printing Tip:</span> In the print dialog, select{' '}
-          <strong>"Save as PDF"</strong>, paper size <strong>Letter</strong> (or A4), portrait orientation.
+        {/* Tip Banner with Default A4 indicator */}
+        <div className="bg-slate-50 border-t border-slate-200 py-1.5 px-4 text-center text-xs text-slate-700">
+          📄 <span className="font-semibold text-slate-900">Default Paper Size:</span>{' '}
+          <strong>A4 Portrait</strong> (210 × 297 mm). In your browser print dialog, paper size defaults to <strong>A4</strong>.
         </div>
       </div>
 

@@ -103,7 +103,17 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && Array.isArray(parsed.personnelList) && parsed.personnelList.length > 0) {
-          return parsed;
+          const cleanedPersonnel = parsed.personnelList.map((p: any) => ({
+            ...p,
+            records: (p.records || []).map((r: any) => ({
+              ...r,
+              remarks: (r.remarks && /^(saturday|sunday)$/i.test(String(r.remarks).trim())) ? '' : (r.remarks || '')
+            }))
+          }));
+          return {
+            ...parsed,
+            personnelList: cleanedPersonnel
+          };
         }
       }
     } catch (e) {
@@ -245,12 +255,19 @@ export default function App() {
           {/* Zone 1: Brand wordmark */}
           <a
             href="/"
-            className="text-base sm:text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0 flex items-center gap-2"
+            className="text-base sm:text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0 flex items-center"
           >
-            <div className="w-6 h-6 rounded-md bg-blue-700 text-white flex items-center justify-center font-serif font-black text-xs">
-              CSC
+            <div className="flex flex-col leading-tight">
+              <span className="font-extrabold text-slate-900 tracking-tight text-base flex items-center gap-1.5">
+                DPWH
+                <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">
+                  Form 48
+                </span>
+              </span>
+              <span className="text-[10px] text-slate-500 font-medium tracking-wide">
+                Daily Time Record Generator
+              </span>
             </div>
-            <span>Daily Time Card</span>
           </a>
 
           {/* Zone 2: Nav links */}
@@ -339,8 +356,8 @@ export default function App() {
 
         {/* Main Centerpiece: CSC Form 48 Card */}
         <div className="flex flex-col items-center space-y-4">
-          <div className="flex items-center justify-between w-full max-w-[560px] px-2 text-xs">
-            <span className="font-semibold text-slate-700">Official CSC Form 48 Card Preview</span>
+          <div className="flex items-center justify-between w-full max-w-[840px] px-2 text-xs">
+            <span className="font-semibold text-slate-700">Official DPWH Form 48 (Daily Time Record) Preview</span>
             <button
               onClick={() => setIsPreviewOpen(true)}
               className="text-blue-600 hover:text-blue-800 font-semibold inline-flex items-center gap-1.5 transition-colors"
@@ -350,7 +367,7 @@ export default function App() {
             </button>
           </div>
 
-          <div className="bg-slate-200/80 p-5 sm:p-8 rounded-2xl border border-slate-300 w-full max-w-[620px] flex justify-center shadow-inner overflow-x-auto">
+          <div className="bg-slate-200/80 p-5 sm:p-8 rounded-2xl border border-slate-300 w-full max-w-[840px] flex justify-center shadow-inner overflow-x-auto">
             <CSCForm48Card
               month={dtrDoc.month}
               year={dtrDoc.year}

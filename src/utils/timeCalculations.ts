@@ -226,7 +226,7 @@ export function generateMonthRecords(year: number, month: number, schedule: Offi
         undertimeHours: 0,
         undertimeMinutes: 0,
         hoursWorked: 0,
-        remarks: statusLabel || ''
+        remarks: ''
       });
     } else {
       // Non-existent day in month (e.g. Feb 29-31, Apr 31)
