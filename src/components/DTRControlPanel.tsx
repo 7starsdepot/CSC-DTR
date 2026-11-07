@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Users, Clock, Calendar, FileSpreadsheet, Printer, User, CheckCircle2, ShieldAlert, ArrowRight } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Users, Clock, Calendar, FileSpreadsheet, Printer, User, CheckCircle2, ShieldAlert, ArrowRight, AlertTriangle } from 'lucide-react';
 import { DTRDocument, OfficialSchedule, Signatories, WorkScheduleType, WORK_SCHEDULES, detectScheduleType } from '../types/csc';
-import { MONTH_NAMES } from '../utils/timeCalculations';
+import { MONTH_NAMES, recalculateRecords } from '../utils/timeCalculations';
 
 interface DTRControlPanelProps {
   document: DTRDocument;
@@ -47,6 +47,15 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
     }
   };
 
+  // Precalculate simulated minutes of late and undertime for BOTH schedules on the current employee
+  const sched1Stats = useMemo(() => {
+    return recalculateRecords(currentPersonnel.records, WORK_SCHEDULES.schedule1, 'schedule1');
+  }, [currentPersonnel.records]);
+
+  const sched2Stats = useMemo(() => {
+    return recalculateRecords(currentPersonnel.records, WORK_SCHEDULES.schedule2, 'schedule2');
+  }, [currentPersonnel.records]);
+
   return (
     <div className="space-y-6">
       {/* Primary Action Banner */}
@@ -61,14 +70,6 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={onOpenImport}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors cursor-pointer"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-blue-600" />
-            <span>Import Electronic Time Card</span>
-          </button>
-
           <button
             onClick={onPreviewPrint}
             className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-sm transition-colors cursor-pointer"
@@ -271,9 +272,13 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
                   <span className="font-bold text-xs text-slate-900">
                     Schedule 1: 8:00 AM to 5:00 PM
                   </span>
-                  {activeEmpScheduleType === 'schedule1' && (
+                  {activeEmpScheduleType === 'schedule1' ? (
                     <span className="text-[10px] font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full">
                       Active
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-500 font-medium">
+                      Click to switch
                     </span>
                   )}
                 </div>
@@ -282,8 +287,16 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
                   <span>·</span>
                   <span>PM Out: <strong>5:00 PM</strong></span>
                 </div>
-                <div className="text-[10px] text-slate-500 mt-0.5">
-                  Late if In &gt; 8:00 AM · Undertime if Out &lt; 5:00 PM
+
+                {/* Live Late and Undertime for Schedule 1 */}
+                <div className="mt-2 pt-2 border-t border-slate-200/80 flex items-center gap-2 text-[11px]">
+                  <span className="text-[10px] text-slate-500 uppercase font-semibold">Under Sched 1:</span>
+                  <span className={`px-2 py-0.5 rounded font-bold tabular-nums ${sched1Stats.totalLateMinutes > 0 ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-emerald-50 text-emerald-800'}`}>
+                    Late: {sched1Stats.totalLateMinutes} mins
+                  </span>
+                  <span className={`px-2 py-0.5 rounded font-bold tabular-nums ${sched1Stats.totalUndertimeOnlyMinutes > 0 ? 'bg-rose-100 text-rose-900 border border-rose-300' : 'bg-slate-100 text-slate-600'}`}>
+                    Undertime: {sched1Stats.totalUndertimeOnlyMinutes} mins
+                  </span>
                 </div>
               </button>
 
@@ -301,9 +314,13 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
                   <span className="font-bold text-xs text-slate-900">
                     Schedule 2: 7:00 AM to 4:00 PM
                   </span>
-                  {activeEmpScheduleType === 'schedule2' && (
+                  {activeEmpScheduleType === 'schedule2' ? (
                     <span className="text-[10px] font-bold bg-purple-600 text-white px-2 py-0.5 rounded-full">
                       Active
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-500 font-medium">
+                      Click to switch
                     </span>
                   )}
                 </div>
@@ -312,8 +329,16 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
                   <span>·</span>
                   <span>PM Out: <strong>4:00 PM</strong></span>
                 </div>
-                <div className="text-[10px] text-slate-500 mt-0.5">
-                  Late if In &gt; 7:00 AM · Undertime if Out &lt; 4:00 PM
+
+                {/* Live Late and Undertime for Schedule 2 */}
+                <div className="mt-2 pt-2 border-t border-slate-200/80 flex items-center gap-2 text-[11px]">
+                  <span className="text-[10px] text-slate-500 uppercase font-semibold">Under Sched 2:</span>
+                  <span className={`px-2 py-0.5 rounded font-bold tabular-nums ${sched2Stats.totalLateMinutes > 0 ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-emerald-50 text-emerald-800'}`}>
+                    Late: {sched2Stats.totalLateMinutes} mins
+                  </span>
+                  <span className={`px-2 py-0.5 rounded font-bold tabular-nums ${sched2Stats.totalUndertimeOnlyMinutes > 0 ? 'bg-rose-100 text-rose-900 border border-rose-300' : 'bg-slate-100 text-slate-600'}`}>
+                    Undertime: {sched2Stats.totalUndertimeOnlyMinutes} mins
+                  </span>
                 </div>
               </button>
             </div>
