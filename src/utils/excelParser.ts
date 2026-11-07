@@ -384,6 +384,7 @@ export function parseCellTime(rawVal: any): string {
   // 3. String value
   let str = String(rawVal)
     .replace(/\u00a0/g, ' ')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .replace(/[()]/g, '')
     .trim();
   if (!str || str === '-' || str.toLowerCase() === 'n/a') return '';
@@ -391,33 +392,24 @@ export function parseCellTime(rawVal: any): string {
   // Clean A.M. / P.M. with periods to AM / PM
   str = str.replace(/A\.M\./gi, 'AM').replace(/P\.M\./gi, 'PM');
 
-  // Handle dot separator like "8.00 AM" or "08.00" or "8.00"
-  str = str.replace(/(\d{1,2})\.(\d{2})/, '$1:$2');
+  // Colon or dot separated e.g. "8:05", "8:5", "08:05", "8.05", "8.5", "8:05 AM", "8:05:00", "08:05:00.000"
+  const colonDotMatch = str.match(/^(\d{1,2})[:.](\d{1,2})(?::(\d{1,2}))?(?:\.\d+)?\s*(AM|PM)?$/i);
+  if (colonDotMatch) {
+    let h = parseInt(colonDotMatch[1], 10);
+    const m = parseInt(colonDotMatch[2], 10);
+    const meridiem = colonDotMatch[4]?.toUpperCase();
 
-  // Standard AM/PM format like "11:38 AM", "8:00 AM", "5:00 PM", "8:00AM"
-  const ampmMatch = str.match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?/i);
-  if (ampmMatch) {
-    let h = parseInt(ampmMatch[1], 10);
-    const m = ampmMatch[2];
-    const meridiem = ampmMatch[3]?.toUpperCase();
-
-    if (meridiem === 'PM' && h < 12) {
-      h += 12;
-    } else if (meridiem === 'AM' && h === 12) {
-      h = 0;
+    if (m >= 0 && m < 60 && h >= 0 && h <= 24) {
+      if (meridiem === 'PM' && h < 12) {
+        h += 12;
+      } else if (meridiem === 'AM' && h === 12) {
+        h = 0;
+      }
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     }
-    return `${String(h).padStart(2, '0')}:${m}`;
   }
 
-  // Military 24-hour HH:MM format like "08:00", "17:01"
-  const militaryMatch = str.match(/^(\d{1,2}):(\d{2})$/);
-  if (militaryMatch) {
-    const h = parseInt(militaryMatch[1], 10);
-    const m = militaryMatch[2];
-    return `${String(h).padStart(2, '0')}:${m}`;
-  }
-
-  // 3-digit or 4-digit military string e.g. "0800", "1700", "755", "800"
+  // 3-digit or 4-digit military string e.g. "0805", "805", "0800", "1700", "755", "800"
   const numMatch = str.match(/^(\d{1,2})(\d{2})$/);
   if (numMatch) {
     const h = parseInt(numMatch[1], 10);

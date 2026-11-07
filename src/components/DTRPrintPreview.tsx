@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Printer, ArrowLeft, User, Users, CheckCircle2 } from 'lucide-react';
-import { DTRDocument } from '../types/csc';
+import { Printer, ArrowLeft, User, Users, CheckCircle2, Clock } from 'lucide-react';
+import { DTRDocument, WORK_SCHEDULES } from '../types/csc';
 import { CSCForm48Card } from './CSCForm48Card';
+import { recalculateRecords, formatMinutesDisplay } from '../utils/timeCalculations';
 
 interface DTRPrintPreviewProps {
   document: DTRDocument;
@@ -22,6 +23,9 @@ export const DTRPrintPreview: React.FC<DTRPrintPreviewProps> = ({
     name: 'JUAN D. DELA CRUZ',
     records: []
   };
+
+  const currentSched = WORK_SCHEDULES[currentPersonnel.assignedSchedule || 'schedule1'] || schedule;
+  const currentCalc = recalculateRecords(currentPersonnel.records, currentSched, currentPersonnel.assignedSchedule);
 
   const handlePrint = () => {
     window.print();
@@ -109,12 +113,23 @@ export const DTRPrintPreview: React.FC<DTRPrintPreviewProps> = ({
           </div>
         </div>
 
-        {/* Status Banner: 1 Page Per Employee & Default A4 */}
-        <div className="bg-emerald-50 border-t border-emerald-200 py-1.5 px-4 text-center text-xs text-emerald-900 flex items-center justify-center gap-2">
-          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
-          <span>
-            <strong>1 Page per Employee Guaranteed:</strong> Calibrated to fit completely on a single <strong>A4</strong> (or Letter) portrait page without spilling over.
-          </span>
+        {/* Status Banner: 1 Page Per Employee & Computed Totals */}
+        <div className="bg-emerald-50 border-t border-emerald-200 py-1.5 px-4 text-center text-xs text-emerald-900 flex flex-wrap items-center justify-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+            <span>
+              <strong>1 Page per Employee Guaranteed:</strong> Scaled to fit completely on a single <strong>A4</strong> portrait sheet.
+            </span>
+          </div>
+
+          <div className="h-3 w-[1px] bg-emerald-300 hidden sm:block" />
+
+          <div className="flex items-center gap-2 text-[11px] text-emerald-800">
+            <Clock className="w-3 h-3 text-emerald-700" />
+            <span>
+              {currentPersonnel.name}: Late: <strong>{currentCalc.totals.totalLateMinutes}m (in Remarks)</strong> · Undertime: <strong>{currentCalc.totals.totalUndertimeOnlyMinutes}m ({currentCalc.totals.totalUndertimeOnlyHours}h {currentCalc.totals.totalUndertimeOnlyRemainingMinutes}m)</strong>
+            </span>
+          </div>
         </div>
       </div>
 
@@ -129,31 +144,36 @@ export const DTRPrintPreview: React.FC<DTRPrintPreviewProps> = ({
               month={month}
               year={year}
               employeeName={currentPersonnel.name}
-              records={currentPersonnel.records}
+              records={currentCalc.updatedRecords}
               signatories={signatories}
-              schedule={schedule}
+              schedule={currentSched}
             />
           </div>
         ) : (
           <div className="w-full space-y-8 print:space-y-0 flex flex-col items-center">
-            {personnelList.map((person, idx) => (
-              <div
-                key={idx}
-                className="dtr-page-wrapper w-full flex flex-col items-center"
-              >
-                <div className="no-print text-center text-xs font-semibold text-slate-600 mb-2">
-                  Card {idx + 1} of {personnelList.length}: <strong className="text-slate-900 uppercase">{person.name}</strong>
+            {personnelList.map((person, idx) => {
+              const personSchedKey = person.assignedSchedule || 'schedule1';
+              const personSched = WORK_SCHEDULES[personSchedKey] || schedule;
+              const personCalc = recalculateRecords(person.records, personSched, personSchedKey);
+              return (
+                <div
+                  key={idx}
+                  className="dtr-page-wrapper w-full flex flex-col items-center"
+                >
+                  <div className="no-print text-center text-xs font-semibold text-slate-600 mb-2">
+                    Card {idx + 1} of {personnelList.length}: <strong className="text-slate-900 uppercase">{person.name}</strong> [{personSchedKey === 'schedule2' ? '7:00 AM - 4:00 PM' : '8:00 AM - 5:00 PM'}]
+                  </div>
+                  <CSCForm48Card
+                    month={month}
+                    year={year}
+                    employeeName={person.name}
+                    records={personCalc.updatedRecords}
+                    signatories={signatories}
+                    schedule={personSched}
+                  />
                 </div>
-                <CSCForm48Card
-                  month={month}
-                  year={year}
-                  employeeName={person.name}
-                  records={person.records}
-                  signatories={signatories}
-                  schedule={schedule}
-                />
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

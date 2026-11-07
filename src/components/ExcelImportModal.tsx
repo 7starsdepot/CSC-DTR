@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileSpreadsheet, Check, AlertCircle, X, ArrowRight, Users, User, Clock } from 'lucide-react';
+import { Upload, FileSpreadsheet, Check, AlertCircle, X, ArrowRight, Users, User, Clock, Calendar } from 'lucide-react';
 import { parseExcelFile, convertParsedResultToPersonnelList, ParsedTimeCardResult } from '../utils/excelParser';
 import { OfficialSchedule, PersonnelData } from '../types/csc';
+import { MONTH_NAMES } from '../utils/timeCalculations';
 
 interface ExcelImportModalProps {
   isOpen: boolean;
@@ -25,6 +26,8 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [previewEmpIndex, setPreviewEmpIndex] = useState(0);
+  const [targetMonth, setTargetMonth] = useState<number>(month);
+  const [targetYear, setTargetYear] = useState<number>(year);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
@@ -37,6 +40,12 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       const buffer = await file.arrayBuffer();
       const result = parseExcelFile(buffer, file.name);
       setParseResult(result);
+      if (result.detectedMonth) {
+        setTargetMonth(result.detectedMonth);
+      }
+      if (result.detectedYear) {
+        setTargetYear(result.detectedYear);
+      }
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to parse spreadsheet file. Please check file format.');
       setParseResult(null);
@@ -68,10 +77,10 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
   const handleApplyAll = () => {
     if (!parseResult) return;
-    const targetYear = parseResult.detectedYear || year;
-    const targetMonth = parseResult.detectedMonth || month;
-    const personnelList = convertParsedResultToPersonnelList(parseResult, targetYear, targetMonth, schedule);
-    onImportSuccess(personnelList, targetMonth, targetYear);
+    const finalYear = targetYear || parseResult.detectedYear || year;
+    const finalMonth = targetMonth || parseResult.detectedMonth || month;
+    const personnelList = convertParsedResultToPersonnelList(parseResult, finalYear, finalMonth, schedule);
+    onImportSuccess(personnelList, finalMonth, finalYear);
     onClose();
   };
 
@@ -171,6 +180,51 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                   <span className="text-slate-400">·</span>
                   <span>{parseResult.rawRowsCount} rows scanned</span>
                 </div>
+              </div>
+
+              {/* Target Month & Year Selector to guarantee correct PDF alignment */}
+              <div className="bg-amber-50/70 border border-amber-200 rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                    <Calendar className="w-4 h-4 text-amber-700" />
+                    <span>Target DTR / Form 48 Period:</span>
+                  </div>
+                  <span className="text-[10px] text-amber-800 font-medium">
+                    {parseResult.detectedMonth ? `Detected from file: ${MONTH_NAMES[parseResult.detectedMonth - 1]}` : 'Set destination month'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Month
+                    </label>
+                    <select
+                      value={targetMonth}
+                      onChange={(e) => setTargetMonth(parseInt(e.target.value, 10))}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-md font-semibold text-slate-800 cursor-pointer"
+                    >
+                      {MONTH_NAMES.map((m, idx) => (
+                        <option key={idx} value={idx + 1}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Year
+                    </label>
+                    <input
+                      type="number"
+                      value={targetYear}
+                      onChange={(e) => setTargetYear(parseInt(e.target.value, 10) || 2026)}
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-300 rounded-md font-semibold text-slate-800 tabular-nums"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10.5px] text-amber-900/80 leading-tight">
+                  Days in the Form 48 PDF will align directly to <strong>{MONTH_NAMES[targetMonth - 1]} {targetYear}</strong> (Day 1 through Day {new Date(targetYear, targetMonth, 0).getDate()}).
+                </p>
               </div>
 
               {/* Personnel List Detected */}

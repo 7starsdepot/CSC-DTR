@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { DailyRecord, Signatories, OfficialSchedule } from '../types/csc';
-import { MONTH_NAMES } from '../utils/timeCalculations';
+import { MONTH_NAMES, formatCSCTimeDisplay } from '../utils/timeCalculations';
 
 interface CSCForm48CardProps {
   month: number;
@@ -9,6 +9,7 @@ interface CSCForm48CardProps {
   records: DailyRecord[];
   signatories: Signatories;
   schedule: OfficialSchedule;
+  onUpdateRecord?: (day: number, updated: Partial<DailyRecord>) => void;
 }
 
 export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
@@ -17,15 +18,31 @@ export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
   employeeName,
   records,
   signatories,
-  schedule
+  schedule,
+  onUpdateRecord
 }) => {
   const monthName = MONTH_NAMES[month - 1];
+  const [editingCell, setEditingCell] = useState<{ day: number; field: 'inTime' | 'breakTime' | 'resumeTime' | 'outTime' } | null>(null);
+  const [editValue, setEditValue] = useState<string>('');
 
   // Calculate totals
   const totalUndertimeHours = records.reduce((sum, r) => sum + (r.undertimeHours || 0), 0);
   const totalUndertimeMinutes = records.reduce((sum, r) => sum + (r.undertimeMinutes || 0), 0);
   const normalizedHours = totalUndertimeHours + Math.floor(totalUndertimeMinutes / 60);
   const normalizedMinutes = totalUndertimeMinutes % 60;
+
+  const handleStartEdit = (day: number, field: 'inTime' | 'breakTime' | 'resumeTime' | 'outTime', currentVal: string) => {
+    if (!onUpdateRecord) return;
+    setEditingCell({ day, field });
+    setEditValue(currentVal || '');
+  };
+
+  const handleSaveEdit = () => {
+    if (editingCell && onUpdateRecord) {
+      onUpdateRecord(editingCell.day, { [editingCell.field]: editValue.trim() });
+    }
+    setEditingCell(null);
+  };
 
   return (
     <div
@@ -170,9 +187,37 @@ export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
 
               // Strictly blank remarks; never input saturday or sunday
               const isWeekendDay = isSat || isSun;
-              const displayRemarks = (!isWeekendDay && r.remarks && !/^(saturday|sunday)$/i.test(r.remarks.trim()))
-                ? r.remarks
+
+              // Format late minutes into remarks: e.g. "10 minutes late" or "10 mins late"
+              const lateMins = r.totalLateMinutes || 0;
+              const lateRemarksText = lateMins > 0 ? `${lateMins} minute${lateMins === 1 ? '' : 's'} late` : '';
+
+              // Clean manual remarks (strip any saturday/sunday)
+              const cleanManualRemarks = (!isWeekendDay && r.remarks && !/^(saturday|sunday)$/i.test(r.remarks.trim()))
+                ? r.remarks.trim()
                 : '';
+
+              // Combine manual remarks and late note (if manual remark already contains late notice, avoid duplicate)
+              let displayRemarks = '';
+              if (!isWeekendDay) {
+                if (cleanManualRemarks && lateRemarksText) {
+                  // If manual remarks already mentions late, don't duplicate
+                  if (/late/i.test(cleanManualRemarks)) {
+                    displayRemarks = cleanManualRemarks;
+                  } else {
+                    displayRemarks = `${lateRemarksText}; ${cleanManualRemarks}`;
+                  }
+                } else if (lateRemarksText) {
+                  displayRemarks = lateRemarksText;
+                } else {
+                  displayRemarks = cleanManualRemarks;
+                }
+              }
+
+              const isEditingInTime = editingCell?.day === r.day && editingCell?.field === 'inTime';
+              const isEditingBreakTime = editingCell?.day === r.day && editingCell?.field === 'breakTime';
+              const isEditingResumeTime = editingCell?.day === r.day && editingCell?.field === 'resumeTime';
+              const isEditingOutTime = editingCell?.day === r.day && editingCell?.field === 'outTime';
 
               return (
                 <tr
@@ -195,36 +240,136 @@ export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
                       </td>
                       <td className="border-r border-black text-[8.5px] tabular-nums font-bold text-black p-0 align-middle">-</td>
                       <td className="border-r border-black text-[8.5px] tabular-nums font-bold text-black p-0 align-middle">-</td>
-                      {/* Remarks (Strictly blank for Saturdays/Sundays/Holidays) */}
+                      {/* Remarks */}
                       <td className="text-[8.5px] text-black text-left px-2 py-0 min-w-[190px] align-middle"></td>
                     </>
                   ) : (
                     <>
-                      {/* AM Arrival (In) - highly visible bold font in black */}
-                      <td className="border-r border-black text-[9.5px] font-bold text-black tabular-nums px-0.5 whitespace-nowrap align-middle tracking-tight">
-                        {r.inTime || ''}
+                      {/* AM Arrival (In) */}
+                      <td
+                        onClick={() => !isEditingInTime && handleStartEdit(r.day, 'inTime', r.inTime)}
+                        title={onUpdateRecord ? 'Click to edit arrival time' : undefined}
+                        className={`border-r border-black text-[9.5px] font-bold text-black tabular-nums px-0.5 whitespace-nowrap align-middle tracking-tight ${onUpdateRecord ? 'cursor-pointer hover:bg-amber-50/50' : ''}`}
+                      >
+                        {isEditingInTime ? (
+                          <input
+                            autoFocus
+                            type="text"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={handleSaveEdit}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveEdit();
+                              if (e.key === 'Escape') setEditingCell(null);
+                            }}
+                            placeholder="8:05"
+                            className="w-full text-center text-[9px] font-bold border border-blue-500 rounded bg-blue-50 outline-none p-0"
+                          />
+                        ) : (
+                          formatCSCTimeDisplay(r.inTime)
+                        )}
                       </td>
-                      {/* AM Departure (Break) - highly visible bold font in black */}
-                      <td className="border-r border-black text-[9.5px] font-bold text-black tabular-nums px-0.5 whitespace-nowrap align-middle tracking-tight">
-                        {r.breakTime || ''}
+
+                      {/* AM Departure (Break) */}
+                      <td
+                        onClick={() => !isEditingBreakTime && handleStartEdit(r.day, 'breakTime', r.breakTime)}
+                        title={onUpdateRecord ? 'Click to edit break time' : undefined}
+                        className={`border-r border-black text-[9.5px] font-bold text-black tabular-nums px-0.5 whitespace-nowrap align-middle tracking-tight ${onUpdateRecord ? 'cursor-pointer hover:bg-amber-50/50' : ''}`}
+                      >
+                        {isEditingBreakTime ? (
+                          <input
+                            autoFocus
+                            type="text"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={handleSaveEdit}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveEdit();
+                              if (e.key === 'Escape') setEditingCell(null);
+                            }}
+                            placeholder="12:00"
+                            className="w-full text-center text-[9px] font-bold border border-blue-500 rounded bg-blue-50 outline-none p-0"
+                          />
+                        ) : (
+                          formatCSCTimeDisplay(r.breakTime)
+                        )}
                       </td>
-                      {/* PM Arrival (Resume) - highly visible bold font in black */}
-                      <td className="border-r border-black text-[9.5px] font-bold text-black tabular-nums px-0.5 whitespace-nowrap align-middle tracking-tight">
-                        {r.resumeTime || ''}
+
+                      {/* PM Arrival (Resume) */}
+                      <td
+                        onClick={() => !isEditingResumeTime && handleStartEdit(r.day, 'resumeTime', r.resumeTime)}
+                        title={onUpdateRecord ? 'Click to edit resume time' : undefined}
+                        className={`border-r border-black text-[9.5px] font-bold text-black tabular-nums px-0.5 whitespace-nowrap align-middle tracking-tight ${onUpdateRecord ? 'cursor-pointer hover:bg-amber-50/50' : ''}`}
+                      >
+                        {isEditingResumeTime ? (
+                          <input
+                            autoFocus
+                            type="text"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={handleSaveEdit}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveEdit();
+                              if (e.key === 'Escape') setEditingCell(null);
+                            }}
+                            placeholder="1:00"
+                            className="w-full text-center text-[9px] font-bold border border-blue-500 rounded bg-blue-50 outline-none p-0"
+                          />
+                        ) : (
+                          formatCSCTimeDisplay(r.resumeTime)
+                        )}
                       </td>
-                      {/* PM Departure (Out) - highly visible bold font in black */}
-                      <td className="border-r border-black text-[9.5px] font-bold text-black tabular-nums px-0.5 whitespace-nowrap align-middle tracking-tight">
-                        {r.outTime || ''}
+
+                      {/* PM Departure (Out) */}
+                      <td
+                        onClick={() => !isEditingOutTime && handleStartEdit(r.day, 'outTime', r.outTime)}
+                        title={onUpdateRecord ? 'Click to edit departure time' : undefined}
+                        className={`border-r border-black text-[9.5px] font-bold text-black tabular-nums px-0.5 whitespace-nowrap align-middle tracking-tight ${onUpdateRecord ? 'cursor-pointer hover:bg-amber-50/50' : ''}`}
+                      >
+                        {isEditingOutTime ? (
+                          <input
+                            autoFocus
+                            type="text"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={handleSaveEdit}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveEdit();
+                              if (e.key === 'Escape') setEditingCell(null);
+                            }}
+                            placeholder="5:00"
+                            className="w-full text-center text-[9px] font-bold border border-blue-500 rounded bg-blue-50 outline-none p-0"
+                          />
+                        ) : (
+                          formatCSCTimeDisplay(r.outTime)
+                        )}
                       </td>
+
                       {/* Undertime Hours */}
-                      <td className="border-r border-black text-[9px] font-bold text-black tabular-nums p-0 align-middle">
+                      <td
+                        title={
+                          r.undertimeMinutes || r.undertimeHours
+                            ? `Undertime: ${r.undertimeHours || 0}h ${r.undertimeMinutes || 0}m (${r.totalUndertimeOnlyMinutes || 0}m)`
+                            : undefined
+                        }
+                        className="border-r border-black text-[9px] font-bold text-black tabular-nums p-0 align-middle"
+                      >
                         {r.undertimeHours > 0 ? r.undertimeHours : ''}
                       </td>
+
                       {/* Undertime Minutes */}
-                      <td className="border-r border-black text-[9px] font-bold text-black tabular-nums p-0 align-middle">
+                      <td
+                        title={
+                          r.undertimeMinutes || r.undertimeHours
+                            ? `Undertime: ${r.undertimeHours || 0}h ${r.undertimeMinutes || 0}m (${r.totalUndertimeOnlyMinutes || 0}m)`
+                            : undefined
+                        }
+                        className="border-r border-black text-[9px] font-bold text-black tabular-nums p-0 align-middle"
+                      >
                         {r.undertimeMinutes > 0 ? r.undertimeMinutes : ''}
                       </td>
-                      {/* Remarks column: Balanced blank writing space (no saturday/sunday) */}
+
+                      {/* Remarks column */}
                       <td className="text-[8.5px] text-black font-semibold text-left px-2 py-0 min-w-[190px] align-middle">
                         {displayRemarks}
                       </td>

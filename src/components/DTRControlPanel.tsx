@@ -1,12 +1,13 @@
-import React from 'react';
-import { Users, Clock, Calendar, FileSpreadsheet, Download, Printer, User, CheckCircle2 } from 'lucide-react';
-import { DTRDocument, OfficialSchedule, Signatories } from '../types/csc';
+import React, { useState } from 'react';
+import { Users, Clock, Calendar, FileSpreadsheet, Printer, User, CheckCircle2, ShieldAlert, ArrowRight } from 'lucide-react';
+import { DTRDocument, OfficialSchedule, Signatories, WorkScheduleType, WORK_SCHEDULES, detectScheduleType } from '../types/csc';
 import { MONTH_NAMES } from '../utils/timeCalculations';
 
 interface DTRControlPanelProps {
   document: DTRDocument;
   onChangeSignatories: (sig: Partial<Signatories>) => void;
   onChangeSchedule: (sched: Partial<OfficialSchedule>) => void;
+  onChangeEmployeeSchedule?: (employeeIndex: number, scheduleType: WorkScheduleType, scope: 'all' | 'fromDay', fromDay?: number) => void;
   onChangeMonthYear: (month: number, year: number) => void;
   onSelectPersonnelIndex: (index: number) => void;
   onOpenImport: () => void;
@@ -17,6 +18,7 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
   document,
   onChangeSignatories,
   onChangeSchedule,
+  onChangeEmployeeSchedule,
   onChangeMonthYear,
   onSelectPersonnelIndex,
   onOpenImport,
@@ -25,7 +27,24 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
   const { month, year, personnelList, selectedEmployeeIndex, signatories, schedule } = document;
   const currentPersonnel = personnelList[selectedEmployeeIndex] || personnelList[0] || {
     id: 'EMP-01',
-    name: 'JUAN D. DELA CRUZ'
+    name: 'JUAN D. DELA CRUZ',
+    assignedSchedule: 'schedule1' as WorkScheduleType,
+    records: []
+  };
+
+  const activeEmpScheduleType: WorkScheduleType = currentPersonnel.assignedSchedule || detectScheduleType(schedule);
+  const [scopeMode, setScopeMode] = useState<'all' | 'fromDay'>('all');
+  const [effectiveFromDay, setEffectiveFromDay] = useState<number>(16);
+
+  const handleSelectSchedule = (type: WorkScheduleType) => {
+    // 1. Update overall schedule config
+    const targetConfig = WORK_SCHEDULES[type];
+    onChangeSchedule(targetConfig);
+
+    // 2. Update employee assigned schedule with scope handling
+    if (onChangeEmployeeSchedule) {
+      onChangeEmployeeSchedule(selectedEmployeeIndex, type, scopeMode, effectiveFromDay);
+    }
   };
 
   return (
@@ -37,15 +56,14 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
             CSC Form 48 · Daily Time Card Generator
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Electronic Excel import: <span className="font-semibold text-slate-700">Name: = Employee</span> · <span className="font-semibold text-slate-700">In = AM Arrival</span> · <span className="font-semibold text-slate-700">Break = PM Departure</span> · <span className="font-semibold text-slate-700">Resume = PM Arrival</span> · <span className="font-semibold text-slate-700">Out = PM Departure</span>.
+            Electronic Excel import: <span className="font-semibold text-slate-700">Name: = Employee</span> · <span className="font-semibold text-slate-700">In = AM Arrival</span> · <span className="font-semibold text-slate-700">Break = Lunch Out</span> · <span className="font-semibold text-slate-700">Resume = Lunch In</span> · <span className="font-semibold text-slate-700">Out = PM Departure</span>.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-
           <button
             onClick={onOpenImport}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors cursor-pointer"
           >
             <FileSpreadsheet className="w-4 h-4 text-blue-600" />
             <span>Import Electronic Time Card</span>
@@ -53,10 +71,10 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
 
           <button
             onClick={onPreviewPrint}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-sm transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-sm transition-colors cursor-pointer"
           >
             <Printer className="w-4 h-4" />
-            <span>Print to PDF</span>
+            <span>Print to PDF (1 Page/Emp)</span>
           </button>
         </div>
       </div>
@@ -71,23 +89,23 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
               <span>Imported Employee Records</span>
             </div>
             <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
-              {personnelList.length} Staff
+              {personnelList.length} Staff Loaded
             </span>
           </div>
 
           {/* Personnel Selection Dropdown */}
           <div>
             <label className="block text-[11px] font-medium text-slate-600 mb-1">
-              Select Employee Record (Name: = Employee):
+              Active Employee Card:
             </label>
             <select
               value={selectedEmployeeIndex}
               onChange={(e) => onSelectPersonnelIndex(parseInt(e.target.value, 10))}
-              className="w-full px-2.5 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 font-semibold text-slate-800 uppercase"
+              className="w-full px-2.5 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 font-semibold text-slate-800 uppercase cursor-pointer"
             >
               {personnelList.map((p, idx) => (
                 <option key={idx} value={idx}>
-                  {idx + 1}. {p.name}
+                  {idx + 1}. {p.name} [{p.assignedSchedule === 'schedule2' ? 'Schedule 2: 7am-4pm' : 'Schedule 1: 8am-5pm'}]
                 </option>
               ))}
             </select>
@@ -102,16 +120,15 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
               <select
                 value={month}
                 onChange={(e) => onChangeMonthYear(parseInt(e.target.value, 10), year)}
-                className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-blue-500 font-medium text-slate-800"
+                className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-blue-500 font-medium text-slate-800 cursor-pointer"
               >
-                {MONTH_NAMES.map((name, idx) => (
-                  <option key={name} value={idx + 1}>
-                    {name}
+                {MONTH_NAMES.map((m, idx) => (
+                  <option key={idx} value={idx + 1}>
+                    {m}
                   </option>
                 ))}
               </select>
             </div>
-
             <div>
               <label className="block text-[11px] font-medium text-slate-600 mb-1">
                 Year
@@ -131,22 +148,22 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
               <span>Direct Electronic Mapping</span>
             </div>
             <p className="text-[11px] leading-relaxed text-slate-600">
-              Only data imported from the Excel file will be printed. Manual table modifications are disabled.
+              Only authentic logs from the imported time card appear in the table. Missing punches are treated as 0 late and 0 undertime.
             </p>
           </div>
         </div>
 
-        {/* Panel 2: Signatories (Employee & Timekeeper) */}
+        {/* Panel 2: Signatories (Employee, Timekeeper & Approved) */}
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100">
             <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm">
               <Users className="w-4 h-4 text-emerald-600" />
-              <span>Signatories</span>
+              <span>Signatories (CSC Form 48)</span>
             </div>
           </div>
 
-          {/* 1. Employee Signature (Just "Employee") */}
-          <div className="p-3 bg-slate-50/80 rounded-lg border border-slate-200 space-y-1">
+          {/* 1. Employee Signature */}
+          <div className="p-2.5 bg-slate-50/80 rounded-lg border border-slate-200 space-y-1">
             <div className="text-[11px] font-semibold text-slate-800 flex items-center justify-between">
               <span>1. Employee Signature</span>
               <span className="text-[10px] text-slate-500">Signatory</span>
@@ -154,18 +171,15 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
             <div className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-md font-bold text-xs text-slate-900 uppercase">
               {currentPersonnel.name}
             </div>
-            <div className="text-[10px] text-slate-500 pl-0.5">
-              Role text on card: <span className="font-semibold text-slate-700">Employee</span>
-            </div>
           </div>
 
           {/* 2. Timekeeper Signature */}
-          <div className="p-3 bg-slate-50/80 rounded-lg border border-slate-200 space-y-2">
+          <div className="p-2.5 bg-slate-50/80 rounded-lg border border-slate-200 space-y-1.5">
             <div className="text-[11px] font-semibold text-slate-800 flex items-center justify-between">
               <span>2. Timekeeper Signature</span>
               <span className="text-[10px] text-slate-500">Prescribed Office Hours</span>
             </div>
-            <div className="p-2.5 bg-white rounded-md border border-slate-200 text-center space-y-1">
+            <div className="p-2 bg-white rounded-md border border-slate-200 text-center space-y-1">
               <div className="text-[10px] italic font-medium text-slate-700">
                 Verified as to the prescribed office hours:
               </div>
@@ -177,17 +191,17 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
                     timekeeper: { ...signatories.timekeeper, name: e.target.value }
                   })
                 }
-                placeholder="Optional Name or leave blank for signature line"
+                placeholder="Optional Name or leave blank for line"
                 className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded text-center font-semibold text-slate-800 uppercase"
               />
-              <div className="font-bold text-[10px] tracking-wider uppercase text-slate-900 pt-0.5">
+              <div className="font-bold text-[9.5px] tracking-wider uppercase text-slate-900">
                 TIMEKEEPER
               </div>
             </div>
           </div>
 
-          {/* 3. Retained Approved: Signature */}
-          <div className="p-3 bg-slate-50/80 rounded-lg border border-slate-200 space-y-1.5">
+          {/* 3. Approved Signature */}
+          <div className="p-2.5 bg-slate-50/80 rounded-lg border border-slate-200 space-y-1.5">
             <div className="text-[11px] font-semibold text-slate-800 flex items-center justify-between">
               <span>3. Approved: Signature</span>
               <span className="text-[10px] text-slate-500">In-Charge</span>
@@ -204,7 +218,7 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
                   }
                 })
               }
-              placeholder="Name of Approving Officer (e.g. DIR. ROBERTO V. MENDOZA)"
+              placeholder="Approving Officer (e.g. DIR. ROBERTO V. MENDOZA)"
               className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-md bg-white font-medium text-slate-800 uppercase"
             />
             <input
@@ -225,84 +239,141 @@ export const DTRControlPanel: React.FC<DTRControlPanelProps> = ({
           </div>
         </div>
 
-        {/* Panel 3: Official Working Hours Schedule */}
+        {/* Panel 3: Two Selectable Work Schedules (Schedule 1 & Schedule 2) */}
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
-          <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm pb-2 border-b border-slate-100">
-            <Clock className="w-4 h-4 text-purple-600" />
-            <span>Official Working Schedule</span>
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm">
+              <Clock className="w-4 h-4 text-purple-600" />
+              <span>Official Work Schedules</span>
+            </div>
+            <span className="text-[10px] font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded">
+              {activeEmpScheduleType === 'schedule2' ? 'Schedule 2 (7-4)' : 'Schedule 1 (8-5)'}
+            </span>
           </div>
 
-          {/* Schedule Presets */}
+          {/* Schedule 1 vs Schedule 2 Selection Buttons */}
           <div>
-            <label className="block text-[11px] font-medium text-slate-600 mb-1">
-              Working Schedule Preset
+            <label className="block text-[11px] font-medium text-slate-600 mb-1.5">
+              Select Assigned Work Schedule for <strong className="text-slate-900 uppercase">{currentPersonnel.name}</strong>:
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-2">
+              {/* Option A: Schedule 1 */}
               <button
                 type="button"
-                onClick={() =>
-                  onChangeSchedule({
-                    amIn: '08:00',
-                    amOut: '12:00',
-                    pmIn: '13:00',
-                    pmOut: '17:00',
-                    regularHoursDisplay: '8:00 AM - 12:00 PM / 1:00 PM - 5:00 PM'
-                  })
-                }
-                className={`px-2.5 py-1.5 text-xs rounded-md border text-center transition-colors ${
-                  schedule.amIn === '08:00' && schedule.pmOut === '17:00'
-                    ? 'border-blue-500 bg-blue-50 font-semibold text-blue-700'
-                    : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                onClick={() => handleSelectSchedule('schedule1')}
+                className={`w-full p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  activeEmpScheduleType === 'schedule1'
+                    ? 'border-blue-500 bg-blue-50/70 shadow-xs ring-1 ring-blue-500'
+                    : 'border-slate-200 hover:bg-slate-50/70 bg-white'
                 }`}
               >
-                Standard 8:00 - 5:00
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-slate-900">
+                    Schedule 1: 8:00 AM to 5:00 PM
+                  </span>
+                  {activeEmpScheduleType === 'schedule1' && (
+                    <span className="text-[10px] font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full">
+                      Active
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-slate-600 mt-1 flex items-center gap-2">
+                  <span>AM In: <strong>8:00 AM</strong></span>
+                  <span>·</span>
+                  <span>PM Out: <strong>5:00 PM</strong></span>
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">
+                  Late if In &gt; 8:00 AM · Undertime if Out &lt; 5:00 PM
+                </div>
               </button>
 
+              {/* Option B: Schedule 2 */}
               <button
                 type="button"
-                onClick={() =>
-                  onChangeSchedule({
-                    amIn: '07:00',
-                    amOut: '12:00',
-                    pmIn: '13:00',
-                    pmOut: '16:00',
-                    regularHoursDisplay: '7:00 AM - 12:00 PM / 1:00 PM - 4:00 PM'
-                  })
-                }
-                className={`px-2.5 py-1.5 text-xs rounded-md border text-center transition-colors ${
-                  schedule.amIn === '07:00' && schedule.pmOut === '16:00'
-                    ? 'border-blue-500 bg-blue-50 font-semibold text-blue-700'
-                    : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                onClick={() => handleSelectSchedule('schedule2')}
+                className={`w-full p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  activeEmpScheduleType === 'schedule2'
+                    ? 'border-purple-500 bg-purple-50/70 shadow-xs ring-1 ring-purple-500'
+                    : 'border-slate-200 hover:bg-slate-50/70 bg-white'
                 }`}
               >
-                Early 7:00 - 4:00
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-slate-900">
+                    Schedule 2: 7:00 AM to 4:00 PM
+                  </span>
+                  {activeEmpScheduleType === 'schedule2' && (
+                    <span className="text-[10px] font-bold bg-purple-600 text-white px-2 py-0.5 rounded-full">
+                      Active
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-slate-600 mt-1 flex items-center gap-2">
+                  <span>AM In: <strong>7:00 AM</strong></span>
+                  <span>·</span>
+                  <span>PM Out: <strong>4:00 PM</strong></span>
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">
+                  Late if In &gt; 7:00 AM · Undertime if Out &lt; 4:00 PM
+                </div>
               </button>
             </div>
           </div>
 
-          {/* Card Header Display */}
-          <div>
-            <label className="block text-[11px] font-medium text-slate-600 mb-1">
-              Card Header Display (Regular Days)
-            </label>
-            <input
-              type="text"
-              value={schedule.regularHoursDisplay}
-              onChange={(e) => onChangeSchedule({ regularHoursDisplay: e.target.value })}
-              className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg"
-            />
+          {/* Schedule Change Scope & Preservation of Previous Records */}
+          <div className="p-3 bg-slate-50/90 border border-slate-200 rounded-lg space-y-2">
+            <div className="text-[11px] font-bold text-slate-800 flex items-center justify-between">
+              <span>Schedule Change Date Scope:</span>
+              <span className="text-[10px] text-slate-500">Preserves History</span>
+            </div>
+
+            <div className="space-y-1.5 text-xs">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="scheduleScope"
+                  checked={scopeMode === 'all'}
+                  onChange={() => setScopeMode('all')}
+                  className="text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-[11px] text-slate-700">
+                  Apply to all dates in month
+                </span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="scheduleScope"
+                  checked={scopeMode === 'fromDay'}
+                  onChange={() => setScopeMode('fromDay')}
+                  className="text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-[11px] text-slate-700">
+                  Apply from Day
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={effectiveFromDay}
+                    onChange={(e) => setEffectiveFromDay(Math.max(1, Math.min(31, parseInt(e.target.value, 10) || 1)))}
+                    disabled={scopeMode !== 'fromDay'}
+                    className="w-10 px-1 py-0.5 ml-1 mr-1 border border-slate-300 rounded text-center text-xs font-bold text-slate-800 bg-white"
+                  />
+                  onwards (prior records unchanged)
+                </span>
+              </label>
+            </div>
           </div>
 
-          <div>
-            <label className="block text-[11px] font-medium text-slate-600 mb-1">
-              Saturdays Header Display
-            </label>
-            <input
-              type="text"
-              value={schedule.saturdaysDisplay}
-              onChange={(e) => onChangeSchedule({ saturdaysDisplay: e.target.value })}
-              className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg"
-            />
+          {/* Header Display Info */}
+          <div className="p-2.5 bg-blue-50/50 border border-blue-200 rounded-lg text-[10.5px] text-blue-900 leading-tight space-y-1">
+            <div className="font-bold flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5 text-blue-700 shrink-0" />
+              <span>Automatic Form 48 Header Sync</span>
+            </div>
+            <p className="text-blue-800/90 text-[10px]">
+              Printed Form 48 header automatically reads: <strong>{schedule.regularHoursDisplay}</strong>
+            </p>
           </div>
         </div>
       </div>
