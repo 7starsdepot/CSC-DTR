@@ -28,6 +28,7 @@ export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
   // Calculate totals
   const totalUndertimeHours = records.reduce((sum, r) => sum + (r.undertimeHours || 0), 0);
   const totalUndertimeMinutes = records.reduce((sum, r) => sum + (r.undertimeMinutes || 0), 0);
+  const totalLateMinutes = records.reduce((sum, r) => sum + (r.totalLateMinutes || 0), 0);
   const normalizedHours = totalUndertimeHours + Math.floor(totalUndertimeMinutes / 60);
   const normalizedMinutes = totalUndertimeMinutes % 60;
 
@@ -119,6 +120,7 @@ export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
             <col style={{ width: '48px' }} />
             <col style={{ width: '30px' }} />
             <col style={{ width: '30px' }} />
+            <col style={{ width: '48px' }} />
             <col style={{ width: 'auto' }} />
           </colgroup>
           <thead>
@@ -148,10 +150,16 @@ export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
               >
                 UNDERTIME
               </th>
+              <th
+                rowSpan={2}
+                className="border-r border-black p-0.5 font-bold text-[8px] leading-tight text-black tracking-tight align-middle"
+              >
+                MINUTES LATE
+              </th>
               {/* Remarks column: Balanced spacing */}
               <th
                 rowSpan={2}
-                className="p-0.5 font-bold text-[8.5px] text-black tracking-wider align-middle min-w-[190px]"
+                className="p-0.5 font-bold text-[8.5px] text-black tracking-wider align-middle min-w-[130px]"
               >
                 REMARKS
               </th>
@@ -185,34 +193,11 @@ export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
               const hasRecordedData = Boolean(r.inTime || r.breakTime || r.resumeTime || r.outTime);
               const shouldSpanSpecial = isSpecial && spanLabel && !hasRecordedData;
 
-              // Strictly blank remarks; never input saturday or sunday
+              // Strictly blank remarks; never input saturday, sunday, or late minutes (late now has its own column)
               const isWeekendDay = isSat || isSun;
-
-              // Format late minutes into remarks: e.g. "10 minutes late" or "10 mins late"
-              const lateMins = r.totalLateMinutes || 0;
-              const lateRemarksText = lateMins > 0 ? `${lateMins} minute${lateMins === 1 ? '' : 's'} late` : '';
-
-              // Clean manual remarks (strip any saturday/sunday)
-              const cleanManualRemarks = (!isWeekendDay && r.remarks && !/^(saturday|sunday)$/i.test(r.remarks.trim()))
+              const displayRemarks = (!isWeekendDay && r.remarks && !/^(saturday|sunday)$/i.test(r.remarks.trim()))
                 ? r.remarks.trim()
                 : '';
-
-              // Combine manual remarks and late note (if manual remark already contains late notice, avoid duplicate)
-              let displayRemarks = '';
-              if (!isWeekendDay) {
-                if (cleanManualRemarks && lateRemarksText) {
-                  // If manual remarks already mentions late, don't duplicate
-                  if (/late/i.test(cleanManualRemarks)) {
-                    displayRemarks = cleanManualRemarks;
-                  } else {
-                    displayRemarks = `${lateRemarksText}; ${cleanManualRemarks}`;
-                  }
-                } else if (lateRemarksText) {
-                  displayRemarks = lateRemarksText;
-                } else {
-                  displayRemarks = cleanManualRemarks;
-                }
-              }
 
               const isEditingInTime = editingCell?.day === r.day && editingCell?.field === 'inTime';
               const isEditingBreakTime = editingCell?.day === r.day && editingCell?.field === 'breakTime';
@@ -240,8 +225,9 @@ export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
                       </td>
                       <td className="border-r border-black text-[8.5px] tabular-nums font-bold text-black p-0 align-middle">-</td>
                       <td className="border-r border-black text-[8.5px] tabular-nums font-bold text-black p-0 align-middle">-</td>
+                      <td className="border-r border-black text-[8.5px] tabular-nums font-bold text-black p-0 align-middle">-</td>
                       {/* Remarks */}
-                      <td className="text-[8.5px] text-black text-left px-2 py-0 min-w-[190px] align-middle"></td>
+                      <td className="text-[8.5px] text-black text-left px-2 py-0 min-w-[130px] align-middle"></td>
                     </>
                   ) : (
                     <>
@@ -369,8 +355,20 @@ export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
                         {r.undertimeMinutes > 0 ? r.undertimeMinutes : ''}
                       </td>
 
+                      {/* Minutes Late */}
+                      <td
+                        title={
+                          r.totalLateMinutes && r.totalLateMinutes > 0
+                            ? `Minutes Late: ${r.totalLateMinutes} min${r.totalLateMinutes === 1 ? '' : 's'}`
+                            : undefined
+                        }
+                        className="border-r border-black text-[9px] font-bold text-black tabular-nums p-0 align-middle"
+                      >
+                        {r.totalLateMinutes && r.totalLateMinutes > 0 ? r.totalLateMinutes : ''}
+                      </td>
+
                       {/* Remarks column */}
-                      <td className="text-[8.5px] text-black font-semibold text-left px-2 py-0 min-w-[190px] align-middle">
+                      <td className="text-[8.5px] text-black font-semibold text-left px-2 py-0 min-w-[130px] align-middle">
                         {displayRemarks}
                       </td>
                     </>
@@ -390,7 +388,10 @@ export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
               <td className="border-r border-black text-center text-[9.5px] font-black text-black tabular-nums align-middle">
                 {normalizedMinutes > 0 ? normalizedMinutes : '0'}
               </td>
-              <td className="p-0 text-center text-[8px] text-black font-bold align-middle min-w-[190px]">
+              <td className="border-r border-black text-center text-[9.5px] font-black text-black tabular-nums align-middle">
+                {totalLateMinutes > 0 ? totalLateMinutes : '0'}
+              </td>
+              <td className="p-0 text-center text-[8px] text-black font-bold align-middle min-w-[130px]">
                 {/* Remarks column total space */}
               </td>
             </tr>

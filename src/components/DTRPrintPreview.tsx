@@ -8,15 +8,24 @@ interface DTRPrintPreviewProps {
   document: DTRDocument;
   onExitPreview: () => void;
   onSelectEmployeeIndex: (index: number) => void;
+  printMode?: 'single' | 'all';
+  onChangePrintMode?: (mode: 'single' | 'all') => void;
 }
 
 export const DTRPrintPreview: React.FC<DTRPrintPreviewProps> = ({
   document,
   onExitPreview,
-  onSelectEmployeeIndex
+  onSelectEmployeeIndex,
+  printMode: controlledPrintMode,
+  onChangePrintMode
 }) => {
   const { month, year, personnelList, selectedEmployeeIndex, signatories, schedule } = document;
-  const [printMode, setPrintMode] = useState<'single' | 'all'>('single');
+  const [internalPrintMode, setInternalPrintMode] = useState<'single' | 'all'>(controlledPrintMode ?? 'single');
+  const printMode = controlledPrintMode ?? internalPrintMode;
+  const setPrintMode = (mode: 'single' | 'all') => {
+    setInternalPrintMode(mode);
+    onChangePrintMode?.(mode);
+  };
 
   const currentPersonnel = personnelList[selectedEmployeeIndex] || personnelList[0] || {
     id: 'EMP-01',
@@ -127,7 +136,7 @@ export const DTRPrintPreview: React.FC<DTRPrintPreviewProps> = ({
           <div className="flex items-center gap-2 text-[11px] text-emerald-800">
             <Clock className="w-3 h-3 text-emerald-700" />
             <span>
-              {currentPersonnel.name}: Late: <strong>{currentCalc.totals.totalLateMinutes}m (in Remarks)</strong> · Undertime: <strong>{currentCalc.totals.totalUndertimeOnlyMinutes}m ({currentCalc.totals.totalUndertimeOnlyHours}h {currentCalc.totals.totalUndertimeOnlyRemainingMinutes}m)</strong>
+              {currentPersonnel.name}: Late: <strong>{currentCalc.totals.totalLateMinutes}m</strong> · Undertime: <strong>{currentCalc.totals.totalUndertimeOnlyMinutes}m ({currentCalc.totals.totalUndertimeOnlyHours}h {currentCalc.totals.totalUndertimeOnlyRemainingMinutes}m)</strong>
             </span>
           </div>
         </div>

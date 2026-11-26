@@ -31,6 +31,13 @@ import { DTRPrintPreview } from './components/DTRPrintPreview';
 import { ExcelImportModal } from './components/ExcelImportModal';
 
 const STORAGE_KEY = 'csc_daily_time_card_persisted_v6';
+const VIEW_STATE_KEY = 'csc_dtr_view_state_v1';
+
+interface PersistedViewState {
+  isPreviewOpen: boolean;
+  printMode: 'single' | 'all';
+  isDailyLogOpen: boolean;
+}
 
 export default function App() {
   const currentYear = 2026;
@@ -167,8 +174,22 @@ export default function App() {
               ).updatedRecords
             };
           });
+          const safeIndex = Math.min(
+            Math.max(0, Number(parsed.selectedEmployeeIndex) || 0),
+            cleanedPersonnel.length - 1
+          );
+          const mergedSignatories: Signatories = {
+            employee: { ...initialSignatories.employee, ...(parsed.signatories?.employee || {}) },
+            timekeeper: { ...initialSignatories.timekeeper, ...(parsed.signatories?.timekeeper || {}) },
+            chiefSupervisor: {
+              ...initialSignatories.chiefSupervisor!,
+              ...(parsed.signatories?.chiefSupervisor || {})
+            }
+          };
           return {
             ...parsed,
+            selectedEmployeeIndex: safeIndex,
+            signatories: mergedSignatories,
             schedule: currentSched,
             personnelList: cleanedPersonnel
           };
@@ -190,7 +211,43 @@ export default function App() {
     };
   });
 
-  // Automatically save to localStorage whenever dtrDoc is updated or imported
+  // Restore last generated report view state (Print Preview vs Records, single vs all mode, inspector state)
+  const [viewState, setViewState] = useState<PersistedViewState>(() => {
+    try {
+      const savedView = localStorage.getItem(VIEW_STATE_KEY);
+      if (savedView) {
+        const parsed = JSON.parse(savedView);
+        return {
+          isPreviewOpen: Boolean(parsed?.isPreviewOpen),
+          printMode: parsed?.printMode === 'all' ? 'all' : 'single',
+          isDailyLogOpen: Boolean(parsed?.isDailyLogOpen)
+        };
+      }
+    } catch (e) {
+      console.warn('Could not read saved view state from localStorage', e);
+    }
+    return {
+      isPreviewOpen: false,
+      printMode: 'single',
+      isDailyLogOpen: false
+    };
+  });
+
+  const isPreviewOpen = viewState.isPreviewOpen;
+  const printMode = viewState.printMode;
+  const isDailyLogOpen = viewState.isDailyLogOpen;
+
+  const setIsPreviewOpen = (open: boolean) => {
+    setViewState((prev) => ({ ...prev, isPreviewOpen: open }));
+  };
+  const setPrintMode = (mode: 'single' | 'all') => {
+    setViewState((prev) => ({ ...prev, printMode: mode }));
+  };
+  const setIsDailyLogOpen = (open: boolean) => {
+    setViewState((prev) => ({ ...prev, isDailyLogOpen: open }));
+  };
+
+  // Automatically save dtrDoc and active report view state to localStorage
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(dtrDoc));
@@ -199,9 +256,15 @@ export default function App() {
     }
   }, [dtrDoc]);
 
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_STATE_KEY, JSON.stringify(viewState));
+    } catch (e) {
+      console.warn('Could not persist view state to localStorage', e);
+    }
+  }, [viewState]);
+
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [isDailyLogOpen, setIsDailyLogOpen] = useState(false);
   const [isScheduleInfoOpen, setIsScheduleInfoOpen] = useState(false);
 
   // Active selected personnel
@@ -377,12 +440,14 @@ export default function App() {
 
   const handleImportSuccess = (importedPersonnel: PersonnelData[], newMonth?: number, newYear?: number) => {
     if (importedPersonnel.length === 0) return;
+    const firstSchedKey = importedPersonnel[0].assignedSchedule || 'schedule1';
     setDtrDoc((prev) => ({
       ...prev,
       month: newMonth || prev.month,
       year: newYear || prev.year,
       personnelList: importedPersonnel,
-      selectedEmployeeIndex: 0
+      selectedEmployeeIndex: 0,
+      schedule: WORK_SCHEDULES[firstSchedKey] || prev.schedule
     }));
   };
 
@@ -411,6 +476,8 @@ export default function App() {
         document={dtrDoc}
         onExitPreview={() => setIsPreviewOpen(false)}
         onSelectEmployeeIndex={handleSelectPersonnelIndex}
+        printMode={printMode}
+        onChangePrintMode={setPrintMode}
       />
     );
   }

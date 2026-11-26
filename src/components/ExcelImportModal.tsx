@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Upload, FileSpreadsheet, Check, AlertCircle, X, ArrowRight, Users, User, Clock, Calendar } from 'lucide-react';
 import { parseExcelFile, convertParsedResultToPersonnelList, ParsedTimeCardResult } from '../utils/excelParser';
 import { OfficialSchedule, PersonnelData } from '../types/csc';
@@ -29,6 +29,13 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const [targetMonth, setTargetMonth] = useState<number>(month);
   const [targetYear, setTargetYear] = useState<number>(year);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen && !parseResult) {
+      setTargetMonth(month);
+      setTargetYear(year);
+    }
+  }, [isOpen, month, year, parseResult]);
 
   if (!isOpen) return null;
 
