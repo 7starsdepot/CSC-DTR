@@ -411,15 +411,15 @@ export const CSCForm48Card: React.FC<CSCForm48CardProps> = ({
       </div>
 
       {/* SIGNATORIES: Employee, Timekeeper, and Approved */}
-      <div className="mt-2 pt-1 border-t border-black space-y-2 text-black">
+      <div className="mt-2 pt-2 border-t border-black space-y-2.5 text-black">
         {/* 1. Employee Signature Part */}
-        <div className="text-center">
-          <div className="w-[80%] mx-auto border-b border-black pb-0.5">
+        <div className="text-center pt-6 pb-1.5">
+          <div className="w-[80%] mx-auto border-b border-black pb-1">
             <span className="font-bold text-[10px] text-black uppercase tracking-wide">
               {employeeName || signatories.employee.name || 'EMPLOYEE SIGNATURE'}
             </span>
           </div>
-          <div className="text-[8.5px] text-black font-bold mt-0.5 tracking-wide">
+          <div className="text-[8.5px] text-black font-bold mt-1 tracking-wide">
             Employee
           </div>
         </div>
