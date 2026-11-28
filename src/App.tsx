@@ -451,24 +451,6 @@ export default function App() {
     }));
   };
 
-  const handleUpdateRecord = (day: number, updatedFields: Partial<DailyRecord>) => {
-    setDtrDoc((prev) => {
-      const currentList = [...prev.personnelList];
-      const p = currentList[prev.selectedEmployeeIndex];
-      if (!p) return prev;
-      const updatedRecords = p.records.map((r) => (r.day === day ? { ...r, ...updatedFields } : r));
-      const pSchedKey = p.assignedSchedule || 'schedule1';
-      currentList[prev.selectedEmployeeIndex] = {
-        ...p,
-        records: recalculateRecords(updatedRecords, WORK_SCHEDULES[pSchedKey], pSchedKey).updatedRecords
-      };
-      return {
-        ...prev,
-        personnelList: currentList
-      };
-    });
-  };
-
   // Full-page Print Preview Mode
   if (isPreviewOpen) {
     return (
@@ -944,7 +926,6 @@ export default function App() {
               records={currentPersonnel.records}
               signatories={dtrDoc.signatories}
               schedule={currentPersonnelSchedule}
-              onUpdateRecord={handleUpdateRecord}
             />
           </div>
         </div>
